@@ -3,7 +3,9 @@ package tasks
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -11,6 +13,8 @@ import (
 	"final-project/internal/database"
 	"final-project/internal/nextdate"
 )
+
+const DP = "20060102" //формат даты
 
 // Task структура для хранения информации о задаче.
 type Task struct {
@@ -21,10 +25,13 @@ type Task struct {
 	Repeat  string `json:"repeat"`
 }
 
+// Errors структура для ответа с ошибкой
+type Errors struct {
+	Errors string `json:"error"`
+}
+
 // TaskHandler обрабатывает запросы к /api/task.
-func TaskHandler(w http.ResponseWriter, r *http.Request) {
-	db := database.InitDatabase() // Функция для получения соединения с БД
-	defer db.Close()              // Закрываем соединение с БД после завершения работы
+func TaskHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	// Установка заголовка Content-Type для JSON
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 
@@ -47,73 +54,74 @@ func TaskHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleTaskPost обрабатывает POST-запрос для добавления задачи.
+// Функция для добавления задачи
 func handleTaskPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
-	// Десериализация JSON-запроса
-	var task Task
-	err := json.NewDecoder(r.Body).Decode(&task)
-	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error": "ошибка десериализации JSON: %s"}`, err), http.StatusBadRequest)
-		return
-	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
-	// Проверка обязательного поля Title
-	if task.Title == "" {
-		http.Error(w, `{"error": "Не указан заголовок задачи"}`, http.StatusBadRequest)
+	var taskData Task //структура для хранения данных задачи
+
+	// Декодирование JSON тела запроса
+	response, err := json.Marshal(map[string]int{"id": taskData.ID})
+	if err != nil {
+		setErrorResponse(w, "Ошибка кодирования JSON", err)
 		return
 	}
+	//w.Write(response)
+	if _, err := w.Write(response); err != nil {
+		log.Printf("Ошибка при отправке ответа: %v", err)
+		http.Error(w, "Внутренняя ошибка сервера", http.StatusInternalServerError)
+		return
+	} //отправка ответа
 
 	// Установка даты по умолчанию или проверка формата даты
-	if len(task.Date) == 0 {
-		task.Date = time.Now().Format("20060102")
+	if len(taskData.Date) == 0 {
+		taskData.Date = time.Now().Format(DP)              //установка даты по умолчанию
+		log.Printf("Дата по умолчанию: %s", taskData.Date) //логирование даты по умолчанию
 	} else {
-		date, err := time.Parse("20060102", task.Date)
+		date, err := time.Parse(DP, taskData.Date) //парсинг даты
 		if err != nil {
-			http.Error(w, fmt.Sprintf(`{"error": "неверный формат даты: %s"}`, err), http.StatusBadRequest)
+			setErrorResponse(w, "Неверный формат даты", err)
 			return
 		}
-
-		if date.Before(time.Now()) {
-			task.Date = time.Now().Format("20060102")
+		//установка даты по умолчанию
+		if date.Before(time.Now().Truncate(24 * time.Hour)) {
+			taskData.Date = time.Now().Format(DP)
 		}
+	}
+
+	// Проверка заголовка задачи
+	if len(taskData.Title) == 0 {
+		setErrorResponse(w, "Недопустимый заголовок", errors.New("заголовок пустой"))
+		return
 	}
 
 	// Проверка формата повтора
-	if len(task.Repeat) > 0 {
-		if _, err := nextdate.NextDate(time.Now(), task.Date, task.Repeat); err != nil {
-			http.Error(w, fmt.Sprintf(`{"error": "неверный формат повтора: %s"}`, err), http.StatusBadRequest)
+	//if len(taskData.Repeat) > 0 {
+	//if _, err := nextdate.NextDate(time.Now(), taskData.Date, taskData.Repeat); err != nil {
+	//setErrorResponse(w, "Недопустимый формат повтора", errors.New("нет такого формата"))
+	//return
+	//}	//}
+	if taskData.Repeat != "" {
+		if _, err := nextdate.NextDate(time.Now(), taskData.Date, taskData.Repeat); err != nil {
+			setErrorResponse(w, "Неверный формат повтора", err)
 			return
 		}
 	}
 
-	// Вставка новой задачи в базу данных
-	result, err := db.Exec(`
-		INSERT INTO scheduler (date, title, comment, repeat)
-		VALUES (?, ?, ?, ?)
-	`, task.Date, task.Title, task.Comment, task.Repeat)
+	// Добавление задачи в базу данных
+	taskID, err := insertTask(db, taskData)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error": "ошибка вставки задачи: %s"}`, err), http.StatusInternalServerError)
+		setErrorResponse(w, "Не удалось создать задачу", err)
 		return
 	}
 
-	// Получение ID новой записи
-	id, err := result.LastInsertId()
-	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error": "ошибка получения ID: %s"}`, err), http.StatusInternalServerError)
-		return
-	}
-
-	// Возвращаем JSON-ответ с ID новой записи
-	fmt.Fprintf(w, `{"id": %d}`, id)
-
-	err = database.Create(db, &database.Scheduler{})
-	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error": "ошибка создания задачи: %s"}`, err), http.StatusInternalServerError)
-		return
-	}
-
+	// Возвращение ID созданной задачи
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(task)
+	if err := json.NewEncoder(w).Encode(map[string]int64{"id": taskID}); err != nil {
+		setErrorResponse(w, "Не удалось закодировать ответ", err)
+		return
+	}
+	log.Printf("Добавлена задача с id=%d", taskID) //логирование добавления задачи
 }
 
 // handleTaskGet обрабатывает GET-запрос для получения информации о задаче.
@@ -144,7 +152,7 @@ func handleTaskGet(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		if err == sql.ErrNoRows {
 			http.Error(w, `{"error": "Задача не найдена"}`, http.StatusNotFound)
 		} else {
-			http.Error(w, fmt.Sprintf("ошибка получения задачи: %s", err), http.StatusInternalServerError)
+			setErrorResponse(w, "ошибка получения задачи", err)
 		}
 		return
 	}
@@ -153,14 +161,19 @@ func handleTaskGet(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	if err := json.NewEncoder(w).Encode(task); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+	//получение задачи
 	tasks, err := database.GetTasks(db, map[string]string{"id": idStr})
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error": "ошибка получения задач: %s"}`, err), http.StatusInternalServerError)
 		return
 	}
-
+	//отправка ответа
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{"tasks": tasks})
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{"tasks": tasks}); err != nil {
+		log.Printf("Ошибка при кодировании JSON: %v", err)
+		http.Error(w, "Внутренняя ошибка сервера", http.StatusInternalServerError)
+		return
+	}
 }
 
 // handleTaskPut обрабатывает PUT-запрос для обновления задачи.
@@ -169,18 +182,18 @@ func handleTaskPut(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	var task database.Scheduler
 	err := json.NewDecoder(r.Body).Decode(&task)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error": "ошибка десериализации JSON: %s"}`, err), http.StatusBadRequest)
+		setErrorResponse(w, "ошибка десериализации JSON", err)
 		return
 	}
 
 	// Проверка обязательного поля ID
 	if task.ID == 0 {
-		http.Error(w, `{"error": "Не указан ID задачи"}`, http.StatusBadRequest)
+		setErrorResponse(w, "Не указан ID задачи", errors.New("ID пустой"))
 		return
 	}
 	// Проверка обязательного поля Title
 	if task.Title == "" {
-		http.Error(w, `{"error": "Не указан заголовок задачи"}`, http.StatusBadRequest)
+		setErrorResponse(w, "Не указан заголовок задачи", errors.New("заголовок пустой"))
 		return
 	}
 
@@ -190,10 +203,10 @@ func handleTaskPut(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	} else {
 		date, err := time.Parse("20060102", task.Date)
 		if err != nil {
-			http.Error(w, fmt.Sprintf(`{"error": "неверный формат даты: %s"}`, err), http.StatusBadRequest)
+			setErrorResponse(w, "неверный формат даты", err)
 			return
 		}
-
+		//установка даты по умолчанию
 		if date.Before(time.Now()) {
 			task.Date = time.Now().Format("20060102")
 		}
@@ -202,7 +215,7 @@ func handleTaskPut(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	// Проверка формата повтора
 	if len(task.Repeat) > 0 {
 		if _, err := nextdate.NextDate(time.Now(), task.Date, task.Repeat); err != nil {
-			http.Error(w, fmt.Sprintf(`{"error": "неверный формат повтора: %s"}`, err), http.StatusBadRequest)
+			setErrorResponse(w, "Неверный формат повтора", err)
 			return
 		}
 	}
@@ -220,15 +233,19 @@ func handleTaskPut(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 
 	// Возвращаем пустой JSON-ответ
 	jsonError(w, http.StatusOK)
-
+	//обновление задачи
 	err = database.Update(db, &database.Scheduler{})
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error": "ошибка обновления задачи: %s"}`, err), http.StatusInternalServerError)
 		return
 	}
-
+	//отправка ответа
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(task)
+	if err := json.NewEncoder(w).Encode(task); err != nil {
+		log.Printf("Ошибка при кодировании JSON: %v", err)
+		http.Error(w, "Внутренняя ошибка сервера", http.StatusInternalServerError)
+		return
+	}
 }
 
 // handleTaskDelete обрабатывает DELETE-запрос для удаления задачи.
@@ -273,15 +290,19 @@ func handleTaskDelete(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		// Возвращаем ошибку, если задача не найдена
 		http.Error(w, `{"error": "Задача не найдена"}`, http.StatusNotFound)
 	}
-
+	//удаление задачи
 	err = database.Delete(db, id)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error": "ошибка удаления задачи: %s"}`, err), http.StatusInternalServerError)
 		return
 	}
-
+	//отправка ответа
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": "ok"}); err != nil {
+		log.Printf("Ошибка при кодировании JSON: %v", err)
+		http.Error(w, "Внутренняя ошибка сервера", http.StatusInternalServerError)
+		return
+	}
 }
 
 // HandleTaskDone обрабатывает PUT-запрос для отметки задачи как выполненной.
@@ -315,84 +336,134 @@ func HandleTaskDone(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprint(w, "{}")
-
+	//обновление задачи
 	_, err = db.Exec("UPDATE scheduler SET completed = 1 WHERE id = ?", id)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error": "ошибка обновления задачи: %s"}`, err), http.StatusInternalServerError)
 		return
 	}
-
+	//отправка ответа
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-
-}
-
-// SearchHandler обрабатывает GET-запрос для получения списка ближайших задач.
-func SearchHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
-	// Проверка метода запроса
-	if r.Method != http.MethodGet {
-		http.Error(w, "Метод не разрешен", http.StatusMethodNotAllowed)
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": "ok"}); err != nil {
+		log.Printf("Ошибка при кодировании JSON: %v", err)
+		http.Error(w, "Внутренняя ошибка сервера", http.StatusInternalServerError)
 		return
 	}
+}
 
-	// Получение параметров запроса
-	search := r.URL.Query().Get("search")
-	dateStr := r.URL.Query().Get("date")
-
-	// Создание SQL-запроса
+// fetchTasks получает задачи из базы данных.
+func fetchTasks(db *sql.DB, search string, dateStr string) ([]Task, error) {
 	query := `SELECT id, date, title, comment, repeat FROM scheduler WHERE date >= ?`
-	args := []interface{}{time.Now().Format("20060102")}
+	args := []interface{}{time.Now().Format(DP)} //добавление даты в запрос
 
-	// Добавление условия поиска по `search`
 	if search != "" {
 		query += " AND (title LIKE ? OR comment LIKE ?)"
 		args = append(args, "%"+search+"%", "%"+search+"%")
 	}
 
-	// Добавление условия выбора по `date`
 	if dateStr != "" {
-		// Преобразуем дату в формат 20060102
-		date, err := time.Parse("20060102", dateStr)
+		date, err := time.Parse(DP, dateStr)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("неверный формат даты: %s", err), http.StatusBadRequest)
-			return
+			return nil, fmt.Errorf("неверный формат даты: %w", err)
 		}
 		query += " AND date = ?"
-		args = append(args, date.Format("20060102"))
+		args = append(args, date.Format(DP)) //добавление даты в запрос
 	}
-
-	// Добавьте условие сортировки и ограничение на количество задач (LIMIT 50)
+	//условное ограничение на количество задач
 	query += " ORDER BY date ASC LIMIT 50"
-
-	// Запрос задач из базы данных
+	//запрос на поиск задач
 	rows, err := db.Query(query, args...)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("ошибка получения задач: %s", err), http.StatusInternalServerError)
-		return
+		return nil, fmt.Errorf("ошибка получения задач: %w", err)
 	}
 	defer rows.Close()
 
-	// Создание списка задач
-	var tasks []Task
+	var tasks []Task //Создание массива задач
 	for rows.Next() {
 		var task Task
 		err := rows.Scan(&task.ID, &task.Date, &task.Title, &task.Comment, &task.Repeat)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("ошибка сканирования задачи: %s", err), http.StatusInternalServerError)
-			return
+			return nil, fmt.Errorf("ошибка сканирования задачи: %w", err)
 		}
 		tasks = append(tasks, task)
 	}
 
-	// Отправка JSON-ответа с списком задач
-	if err := json.NewEncoder(w).Encode(map[string]interface{}{"tasks": tasks}); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	return tasks, nil
+}
+
+// Функция для поиска задач
+func SearchHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+	search := r.URL.Query().Get("search")
+	dateStr := r.URL.Query().Get("date")
+
+	tasks, err := fetchTasks(db, search, dateStr)
+	if err != nil {
+		setErrorResponse(w, "Ошибка получения задач", err)
+		return
 	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	//json.NewEncoder(w).Encode(map[string]interface{}{"tasks": tasks})
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{"tasks": tasks}); err != nil {
+		log.Printf("Ошибка при кодировании JSON: %v", err)
+		http.Error(w, "Внутренняя ошибка сервера", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Получено %d задач", len(tasks))
 }
 
 // jsonError отправляет JSON-ответ с ошибкой.
 func jsonError(w http.ResponseWriter, status int) {
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	w.WriteHeader(status)
-	fmt.Fprintf(w, `{"error": "%s"}`, http.StatusText(status))
+	//fmt.Fprintf(w, `{"error": "%s"}`, http.StatusText(status))
+}
+
+// setErrorResponse отправляет JSON-ответ с ошибкой.
+func setErrorResponse(w http.ResponseWriter, message string, err error) {
+	errorMsg := fmt.Sprintf("%s: %v", message, err)
+	w.WriteHeader(http.StatusBadRequest)
+	//json.NewEncoder(w).Encode(map[string]string{"error": errorMsg})
+	if err := json.NewEncoder(w).Encode(map[string]string{"error": errorMsg}); err != nil {
+		log.Printf("Ошибка при кодировании JSON: %v", err)
+		http.Error(w, "Внутренняя ошибка сервера", http.StatusInternalServerError)
+		return
+	}
+
+	errorResponse := Errors{
+		Errors: fmt.Errorf("%s: %w", message, err).Error(),
+	}
+
+	// Сериализация ответа об ошибке
+	errorData, marshalErr := json.Marshal(errorResponse)
+	if marshalErr != nil {
+		// Если возникла ошибка при маршалинге, отправляем простую ошибку
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	// Устанавливаем заголовок Content-Type
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusBadRequest)
+
+	// Пишем ответ
+	_, writeErr := w.Write(errorData)
+	if writeErr != nil {
+		// Если возникла ошибка при записи ответа, логируем её
+		fmt.Printf("Error writing response: %v\n", writeErr)
+	}
+}
+
+// insertTask добавляет задачу в базу данных.
+func insertTask(db *sql.DB, task Task) (int64, error) {
+	result, err := db.Exec(`
+        INSERT INTO scheduler (date, title, comment, repeat)
+        VALUES (?, ?, ?, ?)
+    `, task.Date, task.Title, task.Comment, task.Repeat)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
 }
