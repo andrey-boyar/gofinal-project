@@ -1,8 +1,8 @@
 package tasks
 
 import (
-	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -15,6 +15,7 @@ import (
 func NextDateHandler(w http.ResponseWriter, r *http.Request) {
 	// Установка заголовка Content-Type для JSON
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+	log.Printf("Получен запрос к /api/nextdate: %s", r.URL.String())
 
 	// Получаем параметры запроса
 	nowStr := r.URL.Query().Get("now")
@@ -40,16 +41,16 @@ func NextDateHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Вызываем функцию NextDate
 	nextDate, err := nextdate.NextDate(now, dateStr, repeat)
-	// nextDate, err := time.Parse("20060102", "20060102")
-	//	fmt.Println(nextDate)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error": "ошибка: %s"}`, err), http.StatusBadRequest)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"next_date": nextDate})
-	// Возвращаем результат в формате JSON
-	// response := map[string]string{"next_date": nextDate}
-	// json.NewEncoder(w).Encode(response)
-	// fmt.Fprintf(w, "%s", nextDate)
+	//w.Write([]byte(nextDate))
+	// Проверяем ошибку при записи ответа
+	if _, err := w.Write([]byte(nextDate)); err != nil {
+		log.Printf("Ошибка при отправке ответа: %v", err)
+		http.Error(w, "Внутренняя ошибка сервера", http.StatusInternalServerError)
+		return
+	}
+
 }

@@ -32,59 +32,65 @@ func InitDatabase() *sql.DB {
 		if err != nil {
 			log.Fatalf("Ошибка получения пути к файлу: %v", err)
 		}
-		dbFile = filepath.Join(filepath.Dir(appPath), "scheduler.db")
+		dbFile = filepath.Join(filepath.Dir(appPath), "scheduler.db") //путь к базе данных
 	}
 
 	// Проверка существования файла базы данных
 	_, err := os.Stat(dbFile)
-	var install bool
-	if err != nil {
-		install = true
+	if os.IsNotExist(err) {
+		log.Println("База данных не существует, будет создана новая")
 		dbFile = "file:scheduler.db?cache=shared&mode=rwc"
 	}
 
 	// Открытие подключения к базе данных
-	//db, err := sql.Open("sqlite3", dbFile)
-	db, err := sql.Open("sqlite3", "file:scheduler.db?cache=shared&mode=rwc")
-	//db, err := sql.Open("sqlite3", dbFile+"?_foreign_keys=on&_journal_mode=WAL&_synchronous=NORMAL&_charset=utf8")
+	db, err := sql.Open("sqlite3", dbFile)
 	if err != nil {
-		log.Fatalf("Ошибка открытия базы данных: %v", err)
+		log.Printf("Ошибка открытия базы данных: %v", err)
 	}
 
 	// Проверка соединения с базой данных
 	if err := db.Ping(); err != nil {
-		log.Fatalf("Ошибка подключения к базе данных: %v", err)
+		log.Printf("Ошибка подключения к базе данных: %v", err)
 	}
 
 	// Если файл базы данных отсутствует, создаем таблицу
-	if install {
-		// Создаем таблицу scheduler
-		_, err = db.Exec(`
-			CREATE TABLE scheduler (
-				id INTEGER PRIMARY KEY AUTOINCREMENT,
-				date TEXT NOT NULL,
-				title TEXT NOT NULL,
-				comment TEXT,
-				repeat TEXT
-			)
-		`)
-		if err != nil {
-			log.Fatalf("Ошибка создания таблицы: %v", err)
+	if os.IsNotExist(err) {
+		if err := createSchema(db); err != nil {
+			log.Fatalf("Ошибка создания схемы базы данных: %v", err)
 		}
-
-		// Создаем индекс по полю date
-		_, err = db.Exec(`
-			CREATE INDEX date_idx ON scheduler (date)
-		`)
-		if err != nil {
-			log.Fatalf("Ошибка создания индекса: %v", err)
-		}
-
 		fmt.Println("База данных создана")
 	} else {
 		fmt.Println("База данных уже существует")
 	}
+
 	return db
+}
+
+// Функция для создания схемы базы данных
+func createSchema(db *sql.DB) error {
+	// Создаем таблицу scheduler
+	_, err := db.Exec(`
+		CREATE TABLE scheduler (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			date TEXT NOT NULL,
+			title TEXT NOT NULL,
+			comment TEXT,
+			repeat TEXT
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("ошибка создания таблицы: %w", err)
+	}
+
+	// Создаем индекс по полю date
+	_, err = db.Exec(`
+		CREATE INDEX date_idx ON scheduler (date)
+	`)
+	if err != nil {
+		return fmt.Errorf("ошибка создания индекса: %w", err)
+	}
+
+	return nil
 }
 
 // Функция для закрытия соединения с базой данных
@@ -126,13 +132,13 @@ func GetTasks(db *sql.DB, filters map[string]string) ([]Scheduler, error) {
 	}
 	defer rows.Close()
 
-	var tasks []Scheduler
+	var tasks []Scheduler //создаем массив задач
 	for rows.Next() {
-		var t Scheduler
+		var t Scheduler //Структура задачи
 		if err := rows.Scan(&t.ID, &t.Date, &t.Title, &t.Comment, &t.Repeat); err != nil {
 			return nil, fmt.Errorf("ошибка сканирования строки: %w", err)
 		}
-		tasks = append(tasks, t)
+		tasks = append(tasks, t) //добавляем задачу в массив
 	}
 
 	if err := rows.Err(); err != nil {
@@ -146,8 +152,8 @@ func GetpoID(db *sql.DB, id int) (Scheduler, error) {
 	query := `SELECT id, date, title, comment, repeat 
         FROM scheduler 
         WHERE id = ?`
-	row := db.QueryRow(query, id)
-	var task Scheduler
+	row := db.QueryRow(query, id) //получение задачи по ID
+	var task Scheduler            //структура задачи
 	err := row.Scan(&task.ID, &task.Date, &task.Title, &task.Comment, &task.Repeat)
 	if err != nil {
 		return Scheduler{}, fmt.Errorf("ошибка получения задачи: %w", err)
@@ -164,24 +170,24 @@ func Create(db *sql.DB, task *Scheduler) error {
 	}
 	defer stmt.Close()
 
-	result, err := stmt.Exec(task.Date, task.Title, task.Comment, task.Repeat)
+	result, err := stmt.Exec(task.Date, task.Title, task.Comment, task.Repeat) //выполнение запроса
 	if err != nil {
 		return fmt.Errorf("ошибка выполнения запроса: %w", err)
 	}
 
-	id, err := result.LastInsertId()
+	id, err := result.LastInsertId() //получение ID новой задачи
 	if err != nil {
 		return fmt.Errorf("ошибка получения ID новой задачи: %w", err)
 	}
 
-	task.ID = int(id)
+	task.ID = int(id) //присваивание ID новой задачи
 	return nil
 }
 
 // Функция для обновления задачи
 func Update(db *sql.DB, task *Scheduler) error {
 	query := `UPDATE scheduler SET date = ?, title = ?, comment = ?, repeat = ? WHERE id = ?`
-	stmt, err := db.Prepare(query)
+	stmt, err := db.Prepare(query) //подготовка запроса
 	if err != nil {
 		return fmt.Errorf("ошибка подготовки запроса: %w", err)
 	}
@@ -226,14 +232,14 @@ func Search(db *sql.DB, search string) ([]Scheduler, error) {
 	}
 	defer rows.Close()
 
-	var tasks []Scheduler
+	var tasks []Scheduler //создаем массив задач
 	for rows.Next() {
-		var task Scheduler
+		var task Scheduler //структура задачи
 		err := rows.Scan(&task.ID, &task.Date, &task.Title, &task.Comment, &task.Repeat)
 		if err != nil {
 			return nil, fmt.Errorf("ошибка сканирования строки: %w", err)
 		}
-		tasks = append(tasks, task)
+		tasks = append(tasks, task) //добавляем задачу в массив
 	}
 
 	if err := rows.Err(); err != nil {
@@ -256,9 +262,9 @@ func SearchDate(db *sql.DB, date string) ([]Scheduler, error) {
 	}
 	defer rows.Close()
 
-	var tasks []Scheduler
+	var tasks []Scheduler //создаем массив задач
 	for rows.Next() {
-		var task Scheduler
+		var task Scheduler //структура задачи
 		err := rows.Scan(&task.ID, &task.Date, &task.Title, &task.Comment, &task.Repeat)
 		if err != nil {
 			return nil, fmt.Errorf("ошибка сканирования строки: %w", err)
