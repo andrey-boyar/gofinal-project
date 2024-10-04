@@ -5,27 +5,25 @@ import (
 	"net/http"
 	"os"
 
+	"final-project/internal/auth"
 	"final-project/internal/config"
 	"final-project/internal/database"
 	"final-project/internal/tasks"
-	"final-project/internal/token"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-const ( //константы
+const (
 	defaultPort = "7540"
 	webDir      = "./web"
 )
 
 // Функция для установки кодировки UTF-8
-func setUTF8Middleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		next.ServeHTTP(w, r)
-	})
-}
+//func setUTF8Middleware(next http.Handler) http.Handler {
+//return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+//	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+//	next.ServeHTTP(w, r)	}) }
 
 func main() {
 	// Загрузка конфигурации
@@ -49,7 +47,7 @@ func main() {
 	// Добавляем middleware
 	r.Use(middleware.Logger)    // Логирование запросов
 	r.Use(middleware.Recoverer) // Обработка паник
-	r.Use(setUTF8Middleware)    // Установка кодировки UTF-8
+	//r.Use(setUTF8Middleware)    // Установка кодировки UTF-8
 
 	// Обслуживаем статические файлы
 	fileServer := http.FileServer(http.Dir(webDir))
@@ -69,14 +67,14 @@ func main() {
 	if isTestEnv {
 		r.Get("/api/nextdate", tasks.NextDateHandler)
 	} else {
-		r.Get("/api/nextdate", token.Auth(tasks.NextDateHandler))
+		r.Get("/api/nextdate", auth.Auth(tasks.NextDateHandler))
 	}
 	// Обработчик запроса /api/task
 	if userAuth {
-		r.Method("GET", "/api/task", token.Auth(func(w http.ResponseWriter, r *http.Request) { tasks.TaskHandler(w, r, db) }))
-		r.Method("POST", "/api/task", token.Auth(func(w http.ResponseWriter, r *http.Request) { tasks.TaskHandler(w, r, db) }))
-		r.Method("PUT", "/api/task", token.Auth(func(w http.ResponseWriter, r *http.Request) { tasks.TaskHandler(w, r, db) }))
-		r.Method("DELETE", "/api/task", token.Auth(func(w http.ResponseWriter, r *http.Request) { tasks.TaskHandler(w, r, db) }))
+		r.Method("GET", "/api/task", auth.Auth(func(w http.ResponseWriter, r *http.Request) { tasks.TaskHandler(w, r, db) }))
+		r.Method("POST", "/api/task", auth.Auth(func(w http.ResponseWriter, r *http.Request) { tasks.TaskHandler(w, r, db) }))
+		r.Method("PUT", "/api/task", auth.Auth(func(w http.ResponseWriter, r *http.Request) { tasks.TaskHandler(w, r, db) }))
+		r.Method("DELETE", "/api/task", auth.Auth(func(w http.ResponseWriter, r *http.Request) { tasks.TaskHandler(w, r, db) }))
 	} else {
 		r.Method("GET", "/api/task", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { tasks.TaskHandler(w, r, db) }))
 		r.Method("POST", "/api/task", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { tasks.TaskHandler(w, r, db) }))
@@ -89,20 +87,20 @@ func main() {
 	}
 	// Обработчик запроса /api/search
 	if userAuth {
-		r.Get("/api/search", token.Auth(SearchHandler))
+		r.Get("/api/search", auth.Auth(SearchHandler))
 	} else {
 		r.Get("/api/search", SearchHandler)
 	}
 	// Обработчик запроса /api/sign
 	if userAuth {
-		r.Post("/api/signin", token.Auth(tasks.HandleSign))
+		r.Post("/api/signin", auth.Auth(auth.HandleSign))
 	} else {
-		r.Post("/api/signin", tasks.HandleSign)
+		r.Post("/api/signin", auth.HandleSign)
 	}
 
 	// Добавляем обработчик для /api/tasks
 	if userAuth {
-		r.Get("/api/tasks", token.Auth(func(w http.ResponseWriter, r *http.Request) { tasks.TaskHandler(w, r, db) }))
+		r.Get("/api/tasks", auth.Auth(func(w http.ResponseWriter, r *http.Request) { tasks.TaskHandler(w, r, db) }))
 	} else {
 		r.Get("/api/tasks", func(w http.ResponseWriter, r *http.Request) { tasks.TaskHandler(w, r, db) })
 	}
@@ -113,7 +111,7 @@ func main() {
 	}
 	// Используем обертку вместо оригинальной функции
 	if userAuth {
-		r.Put("/api/task/done", token.Auth(handleTaskDoneWrapper))
+		r.Put("/api/task/done", auth.Auth(handleTaskDoneWrapper))
 	} else {
 		r.Put("/api/task/done", handleTaskDoneWrapper)
 	}

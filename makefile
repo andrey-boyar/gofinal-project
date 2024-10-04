@@ -2,6 +2,10 @@
 APP_NAME = scheduler-app
 DOCKER_IMAGE = $(APP_NAME)
 DOCKER_CONTAINER = $(APP_NAME)-container
+SRC_DIR = ./cmd/server
+BUILD_DIR = ./bin
+TEST_DIR = ./tests
+GO_FILES = $(shell find . -name '*.go')
 PORT = 7540
 DB_FILE = ./scheduler.db
 
@@ -10,29 +14,39 @@ export TODO_PORT = $(PORT)
 export TODO_DBFILE = $(DB_FILE)
 export TODO_PASSWORD = 123456789
 export TODO_JWT_SECRET = 1qaz2wsx3edc4rfv5tgb6yhn7ujm8ik9ol0p
-# Правило по умолчанию
-.PHONY: all
-all: build run
+export TEST_ENV=true
 
-# Сборка проекта
-.PHONY: build
+# Команды
+.PHONY: all build clean test run
+
+# Основная цель
+all: build
+
+# Сборка приложения
 build:
-	go build -o $(APP_NAME) cmd/server/webserver.go
+	@echo "Сборка приложения..."
+	@mkdir -p $(BUILD_DIR)
+	go build -o $(BUILD_DIR)/$(APP_NAME) $(SRC_DIR)
+# go build -o $(APP_NAME) cmd/server/webserver.go
 
 # Запуск проекта
 .PHONY: run
-run:
-	./$(APP_NAME)
+run: build
+	@echo "Запуск приложения..."
+	./$(BUILD_DIR)/$(APP_NAME)
 
 # Запуск тестов
 .PHONY: test
 test:
+	@echo "Запуск тестов..."
 	go test -v ./...
 
 # Очистка скомпилированных файлов
 .PHONY: clean
 clean:
+	@echo "Очистка..."
 	rm -f $(APP_NAME)
+	rm -rf $(BUILD_DIR)/*
 
 # Сборка Docker-образа
 .PHONY: docker-build

@@ -5,155 +5,76 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 
 	_ "github.com/mattn/go-sqlite3" // Импорт драйвера SQLite
 )
 
 // Определение типа Task
 type Scheduler struct {
-	ID          int
-	Name        string
-	Description string
-	Completed   bool
-	Date        string
-	Title       string
-	Comment     string
-	Repeat      string
+	ID      int
+	Date    string
+	Title   string
+	Comment string
+	Repeat  string
 }
 
 // Функция для инициализации базы данных
 func InitDatabase() *sql.DB {
-	// Получение пути к файлу базы данных из переменной окружения
 	dbFile := os.Getenv("TODO_DBFILE")
 	if dbFile == "" {
-		// Если переменная окружения не задана, используем путь по умолчанию
-		appPath, err := os.Executable()
-		if err != nil {
-			log.Fatalf("Ошибка получения пути к файлу: %v", err)
-		}
-		dbFile = filepath.Join(filepath.Dir(appPath), "scheduler.db") //путь к базе данных
+		log.Fatal("Не задан файл базы данных")
 	}
-
-	// Проверка существования файла базы данных
-	_, err := os.Stat(dbFile)
-	if os.IsNotExist(err) {
-		log.Println("База данных не существует, будет создана новая")
-		dbFile = "file:scheduler.db?cache=shared&mode=rwc"
-	}
-
-	// Открытие подключения к базе данных
 	db, err := sql.Open("sqlite3", dbFile)
 	if err != nil {
-		log.Printf("Ошибка открытия базы данных: %v", err)
+		log.Fatalf("Ошибка открытия базы данных: %v", err)
 	}
-
-	// Проверка соединения с базой данных
-	if err := db.Ping(); err != nil {
-		log.Printf("Ошибка подключения к базе данных: %v", err)
-	}
-
-	// Если файл базы данных отсутствует, создаем таблицу
-	if os.IsNotExist(err) {
-		if err := createSchema(db); err != nil {
-			log.Fatalf("Ошибка создания схемы базы данных: %v", err)
-		}
-		fmt.Println("База данных создана")
-	} else {
-		fmt.Println("База данных уже существует")
-	}
-
 	return db
 }
 
-// Функция для создания схемы базы данных
-func createSchema(db *sql.DB) error {
-	// Создаем таблицу scheduler
-	_, err := db.Exec(`
-		CREATE TABLE scheduler (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			date TEXT NOT NULL,
-			title TEXT NOT NULL,
-			comment TEXT,
-			repeat TEXT
-		)
-	`)
-	if err != nil {
-		return fmt.Errorf("ошибка создания таблицы: %w", err)
+// Функция для получения задач с возможностью фильтрации
+func GetTasks(db *sql.DB, titleFilter string, dateFilter string) ([]Scheduler, error) {
+	query := `SELECT id, date, title, comment, repeat FROM scheduler WHERE 1=1`
+	args := []interface{}{}
+
+	// Фильтрация по заголовку
+	if titleFilter != "" {
+		query += " AND title LIKE ?"
+		args = append(args, "%"+titleFilter+"%")
 	}
 
-	// Создаем индекс по полю date
-	_, err = db.Exec(`
-		CREATE INDEX date_idx ON scheduler (date)
-	`)
-	if err != nil {
-		return fmt.Errorf("ошибка создания индекса: %w", err)
-	}
-
-	return nil
-}
-
-// Функция для закрытия соединения с базой данных
-func CloseDb(db *sql.DB) {
-	if err := db.Close(); err != nil {
-		log.Printf("Ошибка закрытия соединения с базой данных: %v", err)
-	}
-}
-
-// Функция для получения задач
-func GetTasks(db *sql.DB, filters map[string]string) ([]Scheduler, error) {
-	query := "SELECT id, date, title, comment, repeat FROM scheduler WHERE 1=1"
-	var args []interface{}
-
-	// Добавляем фильтры в запрос
-	if date, ok := filters["date"]; ok {
+	// Фильтрация по дате
+	if dateFilter != "" {
 		query += " AND date = ?"
-		args = append(args, date)
-	}
-	if search, ok := filters["search"]; ok {
-		query += " AND (title LIKE ? OR comment LIKE ?)"
-		args = append(args, "%"+search+"%", "%"+search+"%")
+		args = append(args, dateFilter)
 	}
 
-	// Добавляем сортировку и лимит
-	query += " ORDER BY date ASC LIMIT 50"
-
-	// Подготовка запроса
-	stmt, err := db.Prepare(query)
+	rows, err := db.Query(query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("ошибка подготовки запроса: %w", err)
-	}
-	defer stmt.Close()
-
-	// Выполнение запроса
-	rows, err := stmt.Query(args...)
-	if err != nil {
-		return nil, fmt.Errorf("ошибка выполнения запроса: %w", err)
+		return nil, fmt.Errorf("ошибка получения задач: %w", err)
 	}
 	defer rows.Close()
 
-	var tasks []Scheduler //создаем массив задач
+	var tasks []Scheduler
 	for rows.Next() {
-		var t Scheduler //Структура задачи
-		if err := rows.Scan(&t.ID, &t.Date, &t.Title, &t.Comment, &t.Repeat); err != nil {
-			return nil, fmt.Errorf("ошибка сканирования строки: %w", err)
+		var task Scheduler
+		if err := rows.Scan(&task.ID, &task.Date, &task.Title, &task.Comment, &task.Repeat); err != nil {
+			return nil, fmt.Errorf("ошибка сканирования задачи: %w", err)
 		}
-		tasks = append(tasks, t) //добавляем задачу в массив
+		tasks = append(tasks, task)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("ошибка итерации по строкам: %w", err)
+		return nil, fmt.Errorf("ошибка при итерации по строкам: %w", err)
 	}
+
 	return tasks, nil
 }
 
 // Функция для получения задачи по ID
 func GetpoID(db *sql.DB, id int) (Scheduler, error) {
-	query := `SELECT id, date, title, comment, repeat 
-        FROM scheduler 
-        WHERE id = ?`
-	row := db.QueryRow(query, id) //получение задачи по ID
-	var task Scheduler            //структура задачи
+	query := `SELECT id, date, title, comment, repeat FROM scheduler WHERE id = ?`
+	row := db.QueryRow(query, id)
+	var task Scheduler
 	err := row.Scan(&task.ID, &task.Date, &task.Title, &task.Comment, &task.Repeat)
 	if err != nil {
 		return Scheduler{}, fmt.Errorf("ошибка получения задачи: %w", err)
@@ -170,17 +91,17 @@ func Create(db *sql.DB, task *Scheduler) error {
 	}
 	defer stmt.Close()
 
-	result, err := stmt.Exec(task.Date, task.Title, task.Comment, task.Repeat) //выполнение запроса
+	result, err := stmt.Exec(task.Date, task.Title, task.Comment, task.Repeat)
 	if err != nil {
 		return fmt.Errorf("ошибка выполнения запроса: %w", err)
 	}
 
-	id, err := result.LastInsertId() //получение ID новой задачи
+	id, err := result.LastInsertId()
 	if err != nil {
 		return fmt.Errorf("ошибка получения ID новой задачи: %w", err)
 	}
 
-	task.ID = int(id) //присваивание ID новой задачи
+	task.ID = int(id)
 	return nil
 }
 
@@ -216,65 +137,4 @@ func Delete(db *sql.DB, id int) error {
 	}
 
 	return nil
-}
-
-// Функция для поиска задач
-func Search(db *sql.DB, search string) ([]Scheduler, error) {
-	query := `SELECT id, date, title, comment, repeat 
-        FROM scheduler 
-        WHERE title LIKE ? OR comment LIKE ? 
-        ORDER BY date ASC
-        LIMIT 50`
-	search = "%" + search + "%"
-	rows, err := db.Query(query, search, search)
-	if err != nil {
-		return nil, fmt.Errorf("ошибка выполнения запроса: %w", err)
-	}
-	defer rows.Close()
-
-	var tasks []Scheduler //создаем массив задач
-	for rows.Next() {
-		var task Scheduler //структура задачи
-		err := rows.Scan(&task.ID, &task.Date, &task.Title, &task.Comment, &task.Repeat)
-		if err != nil {
-			return nil, fmt.Errorf("ошибка сканирования строки: %w", err)
-		}
-		tasks = append(tasks, task) //добавляем задачу в массив
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("ошибка итерации по строкам: %w", err)
-	}
-
-	return tasks, nil
-}
-
-// Функция для поиска задач по дате
-func SearchDate(db *sql.DB, date string) ([]Scheduler, error) {
-	query := `SELECT id, date, title, comment, repeat 
-        FROM scheduler 
-        WHERE date = ? 
-        ORDER BY date ASC
-        LIMIT 10`
-	rows, err := db.Query(query, date)
-	if err != nil {
-		return nil, fmt.Errorf("ошибка выполнения запроса: %w", err)
-	}
-	defer rows.Close()
-
-	var tasks []Scheduler //создаем массив задач
-	for rows.Next() {
-		var task Scheduler //структура задачи
-		err := rows.Scan(&task.ID, &task.Date, &task.Title, &task.Comment, &task.Repeat)
-		if err != nil {
-			return nil, fmt.Errorf("ошибка сканирования строки: %w", err)
-		}
-		tasks = append(tasks, task)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("ошибка итерации по строкам: %w", err)
-	}
-
-	return tasks, nil
 }
