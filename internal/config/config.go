@@ -2,33 +2,29 @@ package config
 
 import (
 	//"encoding/json"
+	"final-project/internal/moduls"
+	"fmt"
 	"os"
 
 	"github.com/joho/godotenv"
 )
 
-// структура конфигурации
-type Config struct {
-	Port      string `json:"port"`
-	DBFile    string `json:"db_file"`
-	JWTSecret string `json:"jwt_secret"`
-	Password  string `json:"password"`
-	TestEnv   string `json:"test_env"`
-}
-
 // Функция загрузки конфигурации
-func LoadConfig(filename string) (*Config, error) {
+func LoadConfig(filename string) (*moduls.Config, error) {
 	err := godotenv.Load(filename) //загрузка переменных окружения
 	if err != nil {
 		return nil, err
 	}
 	//Конфигурация
-	config := &Config{
-		Port:      os.Getenv("TODO_PORT"),
-		DBFile:    os.Getenv("TODO_DBFILE"),
-		JWTSecret: os.Getenv("TODO_JWT_SECRET"),
-		Password:  os.Getenv("TODO_PASSWORD"),
+	config := &moduls.Config{
+		Port:   os.Getenv("TODO_PORT"),
+		DBFile: os.Getenv("TODO_DBFILE"),
+		//JWTSecret: os.Getenv("TODO_JWT_SECRET"),
+		Password: os.Getenv("TODO_PASSWORD"),
 	}
-
+	// Проверка обязательных полей
+	if config.Port == "" || config.DBFile == "" || config.Password == "" {
+		return nil, fmt.Errorf("отсутствуют обязательные переменные окружения")
+	}
 	return config, nil
 }
