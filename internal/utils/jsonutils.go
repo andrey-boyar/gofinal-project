@@ -2,6 +2,7 @@ package utils
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 )
@@ -10,15 +11,14 @@ import (
 func DecodeJSON(w http.ResponseWriter, r *http.Request, v interface{}) error {
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	if r.Header.Get("Content-Type") != "application/json" {
-		SendError(w, "Неверный Content-Type", nil)
-		return nil
+		SendError(w, "Неверный Content-Type", http.StatusBadRequest)
+		return fmt.Errorf("неверный Content-Type")
 	}
 	decoder := json.NewDecoder(r.Body)
 	defer r.Body.Close()
 	if err := decoder.Decode(v); err != nil {
-		//log.Printf("err: %v", err)
-		SendError(w, "Ошибка декодирования JSON", err)
-		return err
+		SendError(w, "Ошибка декодирования JSON", http.StatusBadRequest)
+		return fmt.Errorf("ошибка декодирования JSON: %w", err)
 	}
 	return nil
 }
@@ -33,38 +33,9 @@ func SendJSON(w http.ResponseWriter, status int, data interface{}) {
 	}
 }
 
-//json.NewEncoder(w).Encode(data)
-
-func SendError(w http.ResponseWriter, message string, err error) {
+func SendError(w http.ResponseWriter, message string, statusCode int) {
+	log.Printf("Отправка ошибки: %s (код: %d)", message, statusCode)
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusBadRequest)
-	errorMessage := message
-	if err != nil {
-		errorMessage += ": " + err.Error()
-	}
-	json.NewEncoder(w).Encode(map[string]string{"error": errorMessage})
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
-
-// SendError отправляет JSON-ответ с ошибкой
-/*func SendError(w http.ResponseWriter, s string, err error) {
-	//формируем структуру с ошибкой
-	error := moduls.Errors{
-		Errors: fmt.Errorf("%s", s).Error()}
-	//формируем ответ
-	errorData, _ := json.Marshal(error)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusBadRequest)
-	// Пишем ответ
-	_, writeErr := w.Write(errorData)
-	if writeErr != nil {
-		http.Error(w, fmt.Errorf("error: %w", writeErr).Error(), http.StatusBadRequest)
-	}
-	//return nil
-}*/
-
-// HandleError обрабатывает ошибки и отправляет ответ клиенту
-//func HandleError(w http.ResponseWriter, message string, err error) {
-//log.Printf("%s: %v", message, err)
-//errorMessage := fmt.Sprintf("%s: %v", message, err)
-//	SendError(w, errorMessage)
-//}

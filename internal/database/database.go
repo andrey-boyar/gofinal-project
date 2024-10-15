@@ -3,12 +3,13 @@ package database
 import (
 	"database/sql"
 	"errors"
-	moduls "final-project/internal/moduls"
 	"fmt"
 	"log"
 	"os"
-	"time"
 
+	moduls "final-project/internal/moduls"
+
+	"github.com/go-sql-driver/mysql"
 	_ "github.com/mattn/go-sqlite3" // Импорт драйвера SQLite
 )
 
@@ -28,10 +29,6 @@ func InitDatabase() *sql.DB {
 	if db != nil {
 		return db
 	}
-	// Настройка пула соединений
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(time.Minute * 5)
 
 	// Проверка соединения с базой данных
 	if err := db.Ping(); err != nil {
@@ -58,38 +55,38 @@ func TestDatabaseConnection(db *sql.DB) error {
 func Searchtitl(db *sql.DB, search string) ([]moduls.Scheduler, error) {
 	var tasks []moduls.Scheduler
 
-	//запрос на поиск задач
+	// запрос на поиск задач
 	query := `SELECT id, date, title, comment, repeat 
 		FROM scheduler 
 		WHERE title LIKE :search OR comment LIKE :search 
 		ORDER BY date 
 		LIMIT 50
 	`
-	//подставляем поисковый запрос
+	// подставляем поисковый запрос
 	search = fmt.Sprintf("%%%s%%", search)
 	rows, err := db.Query(query, sql.Named("search", search))
-
-	//проверка на ошибки
+	// проверка на ошибки
 	if err != nil {
 		return []moduls.Scheduler{}, err
 	}
 	defer rows.Close()
 
-	//считываем задачи построчно
+	// считываем задачи построчно
 	for rows.Next() {
 		var task moduls.Scheduler
 		if err := rows.Scan(&task.ID, &task.Date, &task.Title, &task.Comment, &task.Repeat); err != nil {
-			return []moduls.Scheduler{}, err
+			return nil, fmt.Errorf("ошибка сканирования задачи: %w", err)
 		}
 		tasks = append(tasks, task)
 	}
 
-	//проверка на ошибки
+	// проверка на ошибки
 	if err := rows.Err(); err != nil {
-		return []moduls.Scheduler{}, err
+		// return []moduls.Scheduler{}, err
+		return nil, fmt.Errorf("ошибка при итерации по строкам: %w", err)
 	}
 
-	//проверка на пустой массив
+	// проверка на пустой массив
 	if tasks == nil {
 		tasks = []moduls.Scheduler{}
 	}
@@ -100,7 +97,7 @@ func Searchtitl(db *sql.DB, search string) ([]moduls.Scheduler, error) {
 func SearchDate(db *sql.DB, date string) ([]moduls.Scheduler, error) {
 	var tasks []moduls.Scheduler
 
-	//считываем задачи по дате
+	// считываем задачи по дате
 	rows, err := db.Query("SELECT id, date, title, comment, repeat FROM scheduler WHERE date = :date LIMIT 50",
 		sql.Named("date", date))
 	if err != nil {
@@ -108,7 +105,7 @@ func SearchDate(db *sql.DB, date string) ([]moduls.Scheduler, error) {
 	}
 	defer rows.Close()
 
-	//считываем задачи построчно
+	// считываем задачи построчно
 	for rows.Next() {
 		var task moduls.Scheduler
 		if err := rows.Scan(&task.ID, &task.Date, &task.Title, &task.Comment, &task.Repeat); err != nil {
@@ -117,17 +114,16 @@ func SearchDate(db *sql.DB, date string) ([]moduls.Scheduler, error) {
 		tasks = append(tasks, task)
 	}
 
-	//проверка на ошибки
+	// проверка на ошибки
 	if err := rows.Err(); err != nil {
 		return []moduls.Scheduler{}, err
 	}
 
-	//проверка на пустой массив
+	// проверка на пустой массив
 	if tasks == nil {
 		tasks = []moduls.Scheduler{}
 	}
 	return tasks, nil
-
 }
 
 // Функция для получения задачи по ID
@@ -135,18 +131,13 @@ func GetpoID(id string) (moduls.Scheduler, error) {
 	var task moduls.Scheduler
 	db := InitDatabase()
 	defer db.Close()
-	//считываем задачу по id
-	//row := db.QueryRow("SELECT id, date, title, comment, repeat FROM scheduler WHERE id = :id",
-	//	sql.Named("id", id))
-	//if err := row.Scan(&task.ID, &task.Date, &task.Title, &task.Comment, &task.Repeat); err != nil {
-	//	return moduls.Scheduler{}, err
-	//}
+
 	row := db.QueryRow("SELECT id, date, title, comment, repeat FROM scheduler WHERE id = ?", id)
 	err := row.Scan(&task.ID, &task.Date, &task.Title, &task.Comment, &task.Repeat)
-	if err == sql.ErrNoRows {
-		return moduls.Scheduler{}, fmt.Errorf("задача с ID %s не найдена", id)
-	}
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return moduls.Scheduler{}, fmt.Errorf("задача с ID %s не найдена", id)
+		}
 		return moduls.Scheduler{}, fmt.Errorf("ошибка при получении задачи: %v", err)
 	}
 	return task, nil
@@ -167,12 +158,14 @@ func Create(task *moduls.Scheduler) (int, error) {
 		sql.Named("comment", task.Comment),
 		sql.Named("repeat", task.Repeat))
 	if err != nil {
+		log.Printf("Ошибка при выполнении SQL-запроса: %v", err)
 		return 0, err
 	}
 
 	// Получаем ID последней вставленной записи
 	id, err := result.LastInsertId()
 	if err != nil {
+		log.Printf("Ошибка при получении ID новой задачи: %v", err)
 		return 0, err
 	}
 	return int(id), nil
@@ -180,7 +173,7 @@ func Create(task *moduls.Scheduler) (int, error) {
 
 // Функция для обновления задачи
 func Update(db *sql.DB, task *moduls.Scheduler) (moduls.Scheduler, error) {
-	//var updatedTask moduls.Scheduler
+	// var updatedTask moduls.Scheduler
 
 	// Обновляем задачу в таблице
 	result, err := db.Exec("UPDATE scheduler SET date = :date, title = :title, comment = :comment, repeat = :repeat WHERE id = :id",
@@ -225,37 +218,75 @@ func Delete(id string) error {
 
 	// Проверка на успешное удаление
 	if rowsAffected == 0 {
-		return nil //errors.New("failed to delete")
+		return nil // errors.New("failed to delete")
 	}
 
-	//возвращаем удаленную задачу
+	// возвращаем удаленную задачу
 	return nil
 }
 
 // ReadTask читает все задачи из базы данных
 func ReadTask(db *sql.DB) ([]moduls.Scheduler, error) {
 	var tasks []moduls.Scheduler
-	//считываем все задачи
+	// считываем все задачи
 	rows, err := db.Query("SELECT id, date, title, comment, repeat FROM scheduler ORDER BY date")
 	if err != nil {
-		return []moduls.Scheduler{}, err
+		// return []moduls.Scheduler{}, err
+		return nil, fmt.Errorf("ошибка запроса к базе данных: %w", err)
 	}
 	defer rows.Close()
-	//считываем задачи построчно
+	// считываем задачи построчно
 	for rows.Next() {
 		var task moduls.Scheduler
 		if err := rows.Scan(&task.ID, &task.Date, &task.Title, &task.Comment, &task.Repeat); err != nil {
-			return []moduls.Scheduler{}, err
+			return nil, fmt.Errorf("ошибка сканирования строки: %w", err)
+			// return []moduls.Scheduler{}, err
 		}
 		tasks = append(tasks, task)
 	}
-	//проверка на ошибки
+	// проверка на ошибки
 	if err := rows.Err(); err != nil {
-		return []moduls.Scheduler{}, err
+		return nil, fmt.Errorf("ошибка сканирования строки: %w", err)
+		// return []moduls.Scheduler{}, err
 	}
-	//проверка на пустой массив
+	// проверка на пустой массив
 	if tasks == nil {
 		tasks = []moduls.Scheduler{}
 	}
 	return tasks, nil
+}
+
+// insertTask добавляет задачу в базу данных.
+func InsertTask(db *sql.DB, task moduls.Scheduler) (int64, error) {
+	//if task.Repeat != "" {
+	//if err := nextdate.ValidateRepeatFormat(task.Repeat); err != nil {
+	//return 0, fmt.Errorf("неверный формат повтора: %v", err)
+	//}
+	//}
+	result, err := db.Exec(`
+        INSERT INTO scheduler (date, title, comment, repeat)
+        VALUES (?, ?, ?, ?)
+    `, task.Date, task.Title, task.Comment, task.Repeat)
+	if err != nil {
+		log.Printf("Ошибка добавления задачи: %v", err)
+		if mysqlErr, ok := err.(*mysql.MySQLError); ok {
+			log.Printf("MySQL error number: %d", mysqlErr.Number)
+			switch mysqlErr.Number {
+			case 1062:
+				return 0, fmt.Errorf("задача с таким заголовком уже существует")
+			case 1406:
+				return 0, fmt.Errorf("слишком длинное значение для одного из полей")
+			}
+		}
+		return 0, fmt.Errorf("ошибка при добавлении задачи в базу данных")
+		// return 0, err
+	}
+	id, err := result.LastInsertId()
+	// log.Printf("ID вставленной задачи: %d", id)
+	if err != nil {
+		log.Printf("Ошибка при получении ID вставленной задачи: %v", err)
+		return 0, err
+	}
+	log.Printf("Задача успешно вставлена с ID: %d", id)
+	return id, nil
 }

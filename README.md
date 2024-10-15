@@ -29,10 +29,8 @@
    go mod tidy
    ```
 4. Создайте файл `.env` в корневой директории проекта со следующим содержимым:
-   TODO*PORT=7540
+   TODO_PORT=7540
    TODO_DBFILE=./scheduler.db
-   TODO_PASSWORD=ваш*пароль
-
 5. Запустите приложение:
 
    ````bash
@@ -49,21 +47,16 @@
 
    ```bash
    cd tests
+   ``
    ```
 
-2. Перед запуском тестов установите переменную окружения TEST_ENV:
-
-   ```bash
-   export TEST_ENV=true
-   ```
-
-3. Отредактируйте файл `settings.go`, установив следующие параметры:
+2. Отредактируйте файл `settings.go`, установив следующие параметры:
    const (
    ServerAddress = "http://localhost:7540"
    TestPassword = "ваш*тестовый*пароль"
    )
 
-4. Запустите тесты:
+3. Запустите тесты:
    ```bash
    go test -v или go test ./tests
    ```
@@ -81,7 +74,7 @@
 3. Запустите контейнер:
 
    ```bash
-   docker run -d --name scheduler-container -p 7540:7540 -v /путь/к/вашей/базе/данных:/scheduler.db -e TODO*PASSWORD="ваш*пароль" scheduler-app
+   docker run -d --name scheduler-container -p 7540:7540 -v /путь/к/вашей/базе/данных:/scheduler.db
    ```
 
    Замените `/путь/к/вашей/базе/данных` на реальный путь к файлу SQLite базы данных на вашем компьютере.

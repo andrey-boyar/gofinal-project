@@ -18,6 +18,7 @@ func SetupRouter(r *chi.Mux, db *sql.DB) {
 			auth.LoggingMiddleware(next.ServeHTTP).ServeHTTP(w, r)
 		})
 	})
+
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/nextdate", tasks.NextDateHandler)
 
@@ -29,9 +30,7 @@ func SetupRouter(r *chi.Mux, db *sql.DB) {
 			r.Post("/done", func(w http.ResponseWriter, r *http.Request) { tasks.HandleTaskDone(w, r, db) })
 		})
 
-		r.Get("/tasks", auth.LoggingMiddleware(func(w http.ResponseWriter, r *http.Request) {
-			tasks.GetTaskByID(w, r)
-		}))
+		r.Get("/tasks", func(w http.ResponseWriter, r *http.Request) { tasks.GetTasksHandler(w, r, db) })
 	})
 	// Добавляем HealthCheckHandler
 	r.Get("/api/health", HealthCheckHandler(db))

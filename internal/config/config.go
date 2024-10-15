@@ -4,6 +4,8 @@ import (
 	//"encoding/json"
 	"final-project/internal/moduls"
 	"fmt"
+
+	//"log"
 	"os"
 
 	"github.com/joho/godotenv"
@@ -22,6 +24,7 @@ func LoadConfig(filename string) (*moduls.Config, error) {
 		//JWTSecret: os.Getenv("TODO_JWT_SECRET"),
 		Password: os.Getenv("TODO_PASSWORD"),
 	}
+
 	// Проверка обязательных полей
 	if config.Port == "" || config.DBFile == "" || config.Password == "" {
 		return nil, fmt.Errorf("отсутствуют обязательные переменные окружения")

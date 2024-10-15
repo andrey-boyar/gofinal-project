@@ -7,6 +7,7 @@ import (
 
 	"final-project/internal/config"
 	"final-project/internal/database"
+	"final-project/internal/moduls"
 	"final-project/internal/router"
 
 	"github.com/go-chi/chi"
@@ -30,6 +31,14 @@ func main() {
 	if port == "" {
 		port = defaultPort
 	}
+	// Проверяем, установлен ли пароль в переменной окружения TODO_PASSWORD
+	cfg := moduls.Config{
+		Password: os.Getenv("TODO_PASSWORD"),
+		Port:     defaultPort,
+	}
+	if cfg.Password == "" {
+		log.Fatal("TODO_PASSWORD environment variable is required")
+	}
 
 	// Инициализация базы данных
 	db := database.InitDatabase()
@@ -50,9 +59,10 @@ func main() {
 	// Настраиваем роутер
 	router.SetupRouter(r, db)
 
-	// Обслуживаем статические файлы
-	fileServer := http.FileServer(http.Dir(webDir))
-	r.Handle("/*", http.StripPrefix("/", fileServer))
+	// Обслуживаем статические файлы // Путь к директории с веб-файлами
+	webServer := http.FileServer(http.Dir(webDir))
+	// r.Handle("/*", http.StripPrefix("/", webServer))
+	r.Mount("/", webServer)
 
 	// Запуск сервера на указанном порту
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
