@@ -30,7 +30,7 @@ func TaskHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	case http.MethodGet:
 		id := r.URL.Query().Get("id")
 		if id != "" {
-			task, err := database.GetpoID(id)
+			task, err := database.GetpoID(db, id)
 			if err != nil {
 				if strings.Contains(err.Error(), "не найдена") {
 					utils.SendError(w, err.Error(), http.StatusNotFound)
@@ -85,9 +85,40 @@ func handleTaskPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 			utils.SendError(w, "Неверный формат даты", http.StatusBadRequest)
 			return
 		}
+		if _, err := time.Parse("20060102", taskData.Date); err != nil {
+			utils.SendError(w, "Неверный формат даты. Используйте YYYYMMDD", http.StatusBadRequest)
+			return
+		}
 		// если дата в прошлом, то ставим текущую дату
 		if date.Before(time.Now()) {
 			taskData.Date = time.Now().Format(utils.DateFormat)
+		}
+		if taskData.Repeat != "" {
+			if strings.HasPrefix(taskData.Repeat, "y") && !strings.Contains(taskData.Repeat, ".") {
+				utils.SendError(w, "Для ежегодного повтора необходимо указать дату в формате 'y MM.DD'", http.StatusBadRequest)
+				return
+			}
+		}
+	}
+	// if strings.HasPrefix(taskData.Repeat, "y") {
+	if taskData.Repeat == "y" || (strings.HasPrefix(taskData.Repeat, "y") && !strings.Contains(taskData.Repeat, ".")) {
+		// Если дата не указана, используем дату из поля Date
+		date, err := utils.ParseDate(taskData.Date)
+		if err != nil {
+			utils.SendError(w, "Неверный формат даты", http.StatusBadRequest)
+			return
+		}
+		taskData.Repeat = fmt.Sprintf("y %02d.%02d", date.Month(), date.Day())
+		log.Printf("Автоматически дополнен формат повтора: %s", taskData.Repeat)
+
+	}
+
+	// Валидация формата повтора
+	if len(taskData.Repeat) > 0 {
+		if err := nextdate.ValidateRepeatFormat(taskData.Repeat); err != nil {
+			log.Printf("Ошибка валидации формата повтора: %v", err)
+			utils.SendError(w, fmt.Sprintf("Неверный формат повтора: %v", err), http.StatusBadRequest)
+			return
 		}
 	}
 
@@ -203,9 +234,9 @@ func handleTaskPut(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 }
 
 // GetTaskByID получает задачу по ID
-func GetTaskByID(w http.ResponseWriter, r *http.Request) {
+func GetTaskByID(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	id := r.URL.Query().Get("id")
-	task, err := database.GetpoID(id)
+	task, err := database.GetpoID(db, id)
 	if err != nil {
 		utils.SendError(w, "failed to get task by id", http.StatusInternalServerError)
 		return
@@ -286,7 +317,7 @@ func HandleTaskDone(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
-	task, err := database.GetpoID(strconv.Itoa(idTask))
+	task, err := database.GetpoID(db, strconv.Itoa(idTask))
 	if err != nil {
 		log.Printf("Ошибка при получении задачи: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)

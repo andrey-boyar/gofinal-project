@@ -7,7 +7,8 @@ import (
 
 	"final-project/internal/config"
 	"final-project/internal/database"
-	"final-project/internal/moduls"
+
+	//"final-project/internal/moduls"
 	"final-project/internal/router"
 
 	"github.com/go-chi/chi"
@@ -20,6 +21,9 @@ const (
 )
 
 func main() {
+	currentDir, _ := os.Getwd()
+	log.Printf("Текущая рабочая директория: %s", currentDir)
+
 	// Загрузка конфигурации
 	_, err := config.LoadConfig(".env")
 	if err != nil {
@@ -32,13 +36,13 @@ func main() {
 		port = defaultPort
 	}
 	// Проверяем, установлен ли пароль в переменной окружения TODO_PASSWORD
-	cfg := moduls.Config{
-		Password: os.Getenv("TODO_PASSWORD"),
-		Port:     defaultPort,
-	}
-	if cfg.Password == "" {
-		log.Fatal("TODO_PASSWORD environment variable is required")
-	}
+	//cfg := moduls.Config{
+	//	Password: os.Getenv("TODO_PASSWORD"),
+	//		Port:     defaultPort,
+	//}
+	//if cfg.Password == "" {
+	//	log.Fatal("TODO_PASSWORD environment variable is required")
+	//}
 
 	// Инициализация базы данных
 	db := database.InitDatabase()

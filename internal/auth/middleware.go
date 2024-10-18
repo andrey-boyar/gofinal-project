@@ -16,7 +16,10 @@ type responseWriter struct {
 }
 
 func (w *responseWriter) Write(b []byte) (int, error) {
-	w.body.Write(b)
+	// w.body.Write(b)
+	if _, err := w.body.Write(b); err != nil {
+		log.Printf("Ошибка при записи тела ответа: %v", err)
+	}
 	log.Printf("Ответ: %s", w.body.String())
 	return w.ResponseWriter.Write(b)
 }

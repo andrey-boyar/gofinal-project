@@ -1,12 +1,15 @@
 package nextdate
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"final-project/internal/utils"
 )
 
 func NextDate(now time.Time, date string, repeat string) (string, error) {
@@ -19,12 +22,12 @@ func NextDate(now time.Time, date string, repeat string) (string, error) {
 
 	// Проверяем правило повторения
 	if repeat == "" {
-		return "", fmt.Errorf("правило повтора не указано")
+		return "", errors.New("правило повтора не указано")
 	}
 
 	parts := strings.Split(repeat, " ")
 	if len(parts) < 2 {
-		return "", fmt.Errorf("некорректный формат повтора")
+		return "", errors.New("некорректный формат повтора")
 	}
 
 	repeatType := parts[0]
@@ -39,7 +42,7 @@ func NextDate(now time.Time, date string, repeat string) (string, error) {
 		return startDate.AddDate(0, 0, days).Format("20060102"), nil
 	case "w":
 		if len(parts) != 2 {
-			return "", fmt.Errorf("неверный формат для еженедельного повтора: должно быть 'w D,D,D'")
+			return "", fmt.Errorf("неверный формат для еженедельного повтора: должно быть 'w D,D,D,D,D,D,D'")
 		}
 		days := strings.Split(parts[1], ",")
 		for _, day := range days {
@@ -74,23 +77,36 @@ func NextDate(now time.Time, date string, repeat string) (string, error) {
 		}
 		return calculateNextDateMonthly(now, startDate, days, months)
 	case "y":
-		if len(parts) != 2 {
-			return "", fmt.Errorf("неверный формат для ежегодного повтора: должно быть 'y MM.DD'")
+		if len(parts) == 1 {
+			// Если указан только "y", используем дату из параметра date
+			return calculateNextDateYearly(now, startDate, startDate.Format("01.02"))
 		}
+		return calculateNextDateYearly(now, startDate, parts[1])
+
+		// if len(parts) != 2 {
+		// 	return "", fmt.Errorf("неверный формат для ежегодного повтора: должно быть 'y MM.DD'")
+		// }
 		dateParts := strings.Split(parts[1], ".")
 		if len(dateParts) != 2 {
 			return "", fmt.Errorf("неверный формат даты для ежегодного повтора: должно быть MM.DD")
 		}
+		monthDay := parts[1]
+		nextDate, err := calculateNextDateYearly(now, startDate, monthDay)
+		if err != nil {
+			return "", err
+		}
+		return nextDate, nil
 		// month, _ := strconv.Atoi(dateParts[0])
 		// day, _ := strconv.Atoi(dateParts[1])
-		return calculateNextDateYearly(now, startDate, parts[1])
+		// return calculateNextDateYearly(now, startDate, parts[1])
 	default:
 		return "", fmt.Errorf("неподдерживаемый тип повтора: %s", repeatType)
 	}
-	return "", nil
+	// return "", nil
+	return utils.FormatDate(startDate), nil
 }
 
-// функция
+// функция для вычисления следующей даты по дням недели
 func calculateNextDateWeekly(now, start time.Time, days []string) (string, error) {
 	if len(days) == 0 {
 		return "", fmt.Errorf("не указаны дни недели для повтора")
@@ -117,7 +133,7 @@ func calculateNextDateWeekly(now, start time.Time, days []string) (string, error
 	return "", fmt.Errorf("не удалось найти следующую дату")
 }
 
-// функция
+// функция для вычисления следующей даты по месяцам
 func calculateNextDateMonthly(now, start time.Time, days []string, months []string) (string, error) {
 	// Преобразование дней в числа
 	var dayNums []int
@@ -158,6 +174,7 @@ func calculateNextDateMonthly(now, start time.Time, days []string, months []stri
 	}
 }
 
+// функция для вычисления следующей даты по годам
 func abs(n int) int {
 	if n < 0 {
 		return -n
@@ -165,6 +182,7 @@ func abs(n int) int {
 	return n
 }
 
+// функция для вычисления следующей даты по годам
 func calculateNextDateYearly(now, start time.Time, monthDay string) (string, error) {
 	parts := strings.Split(monthDay, ".")
 	if len(parts) != 2 {
@@ -189,6 +207,7 @@ func calculateNextDateYearly(now, start time.Time, monthDay string) (string, err
 	return nextDate.Format("20060102"), nil
 }
 
+// функция для проверки наличия элемента в массиве
 func contains(slice []int, item int) bool {
 	for _, v := range slice {
 		if v == item {
@@ -198,14 +217,18 @@ func contains(slice []int, item int) bool {
 	return false
 }
 
+// функция для проверки формата повтора
 func ValidateRepeatFormat(repeat string) error {
+	if repeat == "" {
+		return nil // Пустой повтор допустим
+	}
 	parts := strings.Split(repeat, " ")
-	if len(parts) < 2 {
+	if len(parts) < 1 {
 		return fmt.Errorf("неверный формат повтора: недостаточно параметров")
 	}
 
 	switch parts[0] {
-	case "d":
+	case "d": // ежедневный
 		if len(parts) != 2 {
 			return fmt.Errorf("неверный формат для ежедневного повтора: должно быть 'd N'")
 		}
@@ -213,7 +236,7 @@ func ValidateRepeatFormat(repeat string) error {
 		if err != nil || days < 1 {
 			return fmt.Errorf("неверное количество дней: %s", parts[1])
 		}
-	case "w":
+	case "w": // еженедельный
 		if len(parts) != 2 {
 			return fmt.Errorf("неверный формат для еженедельного повтора: должно быть 'w D, D, D, D, D, D, D'")
 		}
@@ -224,7 +247,10 @@ func ValidateRepeatFormat(repeat string) error {
 				return fmt.Errorf("неверный день недели: %s", day)
 			}
 		}
-	case "m":
+	case "m": // ежемесячный
+		if len(parts) < 2 || len(parts) > 3 {
+			return fmt.Errorf("неверный формат для ежемесячного повтора: должно быть 'm D' или 'm D M'")
+		}
 		if len(parts) != 2 && len(parts) != 3 {
 			return fmt.Errorf("неверный формат для ежемесячного повтора: должно быть 'm D' или 'm D M'")
 		}
@@ -244,13 +270,20 @@ func ValidateRepeatFormat(repeat string) error {
 				}
 			}
 		}
-	case "y":
+	case "y": // ежегодный
+		if len(parts) == 1 {
+			return nil // Допускаем формат "y" без даты
+		}
 		if len(parts) != 2 {
 			return fmt.Errorf("неверный формат для ежегодного повтора: должно быть 'y MM.DD'")
 		}
 		dateParts := strings.Split(parts[1], ".")
 		if len(dateParts) != 2 {
 			return fmt.Errorf("неверный формат даты для ежегодного повтора: должно быть MM.DD")
+		}
+		// Добавьте проверку формата MM.DD
+		if _, err := time.Parse("01.02", parts[1]); err != nil {
+			return fmt.Errorf("неверный формат даты для ежегодного повтора: %s", parts[1])
 		}
 		month, err := strconv.Atoi(dateParts[0])
 		if err != nil || month < 1 || month > 12 {
@@ -266,23 +299,25 @@ func ValidateRepeatFormat(repeat string) error {
 	return nil
 }
 
+// функция для нормализации формата повтора
 func CorrectRepeatFormat(repeat string) string {
 	parts := strings.Split(repeat, " ")
 	if len(parts) == 1 {
 		switch parts[0] {
-		case "d":
+		case "d": // ежедневный
 			return "d 1"
-		case "w":
+		case "w": // еженедельный
 			return "w 1,2,3,4,5,6,7"
-		case "m":
+		case "m": // ежемесячный
 			return "m 1"
-		case "y":
+		case "y": // ежегодный
 			return "y 01.01"
 		}
 	}
 	return repeat
 }
 
+// функция для нормализации формата повтора
 func NormalizeRepeatFormat(repeat string) string {
 	parts := strings.Fields(repeat)
 	if len(parts) == 0 {
@@ -290,7 +325,7 @@ func NormalizeRepeatFormat(repeat string) string {
 	}
 
 	switch parts[0] {
-	case "w":
+	case "w": // еженедельный
 		if len(parts) == 1 {
 			return "w 1,2,3,4,5,6,7"
 		}
@@ -313,7 +348,7 @@ func NormalizeRepeatFormat(repeat string) string {
 		}
 		return fmt.Sprintf("w %s", strings.Join(normalizedDays, ","))
 
-	case "m":
+	case "m": // ежемесячный
 		if len(parts) == 1 {
 			return "m 1"
 		}
@@ -355,7 +390,7 @@ func NormalizeRepeatFormat(repeat string) string {
 		}
 		return fmt.Sprintf("m %s", strings.Join(normalizedDays, ","))
 
-	case "y":
+	case "y": // ежегодный
 		if len(parts) == 1 {
 			return "y 01.01"
 		}

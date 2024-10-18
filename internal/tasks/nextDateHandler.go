@@ -1,7 +1,6 @@
 package tasks
 
 import (
-	"encoding/json"
 	"net/http"
 	"time"
 
@@ -13,7 +12,7 @@ func NextDateHandler(w http.ResponseWriter, r *http.Request) {
 	// Получаем параметр "now" из запроса и парсим его
 	now, err := time.Parse(utils.DateFormat, r.FormValue("now"))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		utils.SendError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	// Получаем параметры "date" и "repeat" из запроса
@@ -23,12 +22,13 @@ func NextDateHandler(w http.ResponseWriter, r *http.Request) {
 	// Вычисляем следующую дату с помощью функции NextDate
 	nextDate, err := nextdate.NextDate(now, date, repeat)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		utils.SendError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	// Возвращаем результат в ответе
+	w.Write([]byte(nextDate))
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"next_date": nextDate})
+	// json.NewEncoder(w).Encode(map[string]string{"next_date": nextDate})
 	// utils.SendError(w, http.StatusOK, map[string]string{"next_date": nextDate})
 }

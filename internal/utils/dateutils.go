@@ -6,6 +6,8 @@ import (
 
 const (
 	DateFormat = "20060102"
+	// DefaultTaskLimit определяет максимальное количество задач, возвращаемых при поиске
+	DefaultTaskLimit = 50
 )
 
 func ParseDate(dateStr string) (time.Time, error) {
