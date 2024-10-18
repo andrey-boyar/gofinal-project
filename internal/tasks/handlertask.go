@@ -336,6 +336,11 @@ func HandleTaskDone(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 			utils.SendError(w, "Ошибка при получении следующей даты задачи", http.StatusInternalServerError)
 			return
 		}
+		nextDate, _ := time.Parse("20060102", nextDateTask)
+		if nextDate.Before(time.Now()) {
+			utils.SendError(w, "Следующая дата задачи находится в прошлом", http.StatusBadRequest)
+			return
+		}
 		if len(task.Repeat) > 0 {
 			task.Repeat = nextdate.NormalizeRepeatFormat(task.Repeat)
 			if err := nextdate.ValidateRepeatFormat(task.Repeat); err != nil {

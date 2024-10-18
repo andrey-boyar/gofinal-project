@@ -39,6 +39,9 @@ func NextDate(now time.Time, date string, repeat string) (string, error) {
 	switch repeatType {
 	case "d":
 		days, _ := strconv.Atoi(parts[1])
+		if days > 400 {
+			return "", fmt.Errorf("интервал повтора не может быть больше 400 дней")
+		}
 		return startDate.AddDate(0, 0, days).Format("20060102"), nil
 	case "w":
 		if len(parts) != 2 {
@@ -233,8 +236,8 @@ func ValidateRepeatFormat(repeat string) error {
 			return fmt.Errorf("неверный формат для ежедневного повтора: должно быть 'd N'")
 		}
 		days, err := strconv.Atoi(parts[1])
-		if err != nil || days < 1 {
-			return fmt.Errorf("неверное количество дней: %s", parts[1])
+		if err != nil || days < 1 || days > 400 {
+			return fmt.Errorf("неверное количество дней: %s (должно быть от 1 до 400)", parts[1])
 		}
 	case "w": // еженедельный
 		if len(parts) != 2 {
