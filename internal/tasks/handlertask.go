@@ -78,9 +78,44 @@ func handleTaskPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 			utils.SendError(w, "bad data format", http.StatusBadRequest)
 			return
 		}
+<<<<<<< HEAD
 
+=======
+		if _, err := time.Parse("20060102", taskData.Date); err != nil {
+			utils.SendError(w, "Неверный формат даты. Используйте YYYYMMDD", http.StatusBadRequest)
+			return
+		}
+		// если дата в прошлом, то ставим текущую дату
+>>>>>>> 49cbd60aebcbc098619db0606202eea4fda9a289
 		if date.Before(time.Now()) {
 			taskData.Date = time.Now().Format(utils.DateFormat)
+		}
+		if taskData.Repeat != "" {
+			if strings.HasPrefix(taskData.Repeat, "y") && !strings.Contains(taskData.Repeat, ".") {
+				utils.SendError(w, "Для ежегодного повтора необходимо указать дату в формате 'y MM.DD'", http.StatusBadRequest)
+				return
+			}
+		}
+	}
+	// if strings.HasPrefix(taskData.Repeat, "y") {
+	if taskData.Repeat == "y" || (strings.HasPrefix(taskData.Repeat, "y") && !strings.Contains(taskData.Repeat, ".")) {
+		// Если дата не указана, используем дату из поля Date
+		date, err := utils.ParseDate(taskData.Date)
+		if err != nil {
+			utils.SendError(w, "Неверный формат даты", http.StatusBadRequest)
+			return
+		}
+		taskData.Repeat = fmt.Sprintf("y %02d.%02d", date.Month(), date.Day())
+		log.Printf("Автоматически дополнен формат повтора: %s", taskData.Repeat)
+
+	}
+
+	// Валидация формата повтора
+	if len(taskData.Repeat) > 0 {
+		if err := nextdate.ValidateRepeatFormat(taskData.Repeat); err != nil {
+			log.Printf("Ошибка валидации формата повтора: %v", err)
+			utils.SendError(w, fmt.Sprintf("Неверный формат повтора: %v", err), http.StatusBadRequest)
+			return
 		}
 	}
 	// Проверка заголовка задачи
@@ -272,18 +307,49 @@ func HandleTaskDone(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 
+<<<<<<< HEAD
 	if task.Repeat == "" {
 		err = database.Delete(task.ID)
+=======
+	task, err := database.GetpoID(db, strconv.Itoa(idTask))
+	if err != nil {
+		log.Printf("Ошибка при получении задачи: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		utils.SendError(w, "Ошибка при получении задачи", http.StatusInternalServerError)
+		return
+	}
+
+	if task.Repeat != "" {
+		log.Printf("Задача повторяется: %s", task.Repeat)
+		baseDate, _ := time.Parse("20060102", task.Date)
+		nextDateTask, err := nextdate.NextDate(baseDate, task.Date, task.Repeat)
+		log.Printf("HandleTaskDone: next date calculated: %s", nextDateTask)
+>>>>>>> 49cbd60aebcbc098619db0606202eea4fda9a289
 		if err != nil {
 			utils.SendError(w, "failed to delete task", http.StatusInternalServerError)
 			return
 		}
+<<<<<<< HEAD
 		//log.Println(fmt.Sprintf("task with id=%s was deleted", task.ID))
 	} else {
 		task.Date, err = nextdate.NextDate(time.Now(), task.Date, task.Repeat)
 		if err != nil {
 			utils.SendError(w, "failed to get next date", http.StatusInternalServerError)
 			return
+=======
+		nextDate, _ := time.Parse("20060102", nextDateTask)
+		if nextDate.Before(time.Now()) {
+			utils.SendError(w, "Следующая дата задачи находится в прошлом", http.StatusBadRequest)
+			return
+		}
+		if len(task.Repeat) > 0 {
+			task.Repeat = nextdate.NormalizeRepeatFormat(task.Repeat)
+			if err := nextdate.ValidateRepeatFormat(task.Repeat); err != nil {
+				log.Printf("Ошибка валидации формата повтора: %v", err)
+				utils.SendError(w, fmt.Sprintf("Неверный формат повтора: %v", err), http.StatusBadRequest)
+				return
+			}
+>>>>>>> 49cbd60aebcbc098619db0606202eea4fda9a289
 		}
 		// Обновляем задачу с новой датой
 		_, err = database.Update(db, &task)

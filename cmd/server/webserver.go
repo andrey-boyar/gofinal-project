@@ -21,6 +21,9 @@ const (
 )
 
 func main() {
+	currentDir, _ := os.Getwd()
+	log.Printf("Текущая рабочая директория: %s", currentDir)
+
 	// Загрузка конфигурации
 	_, err := config.LoadConfig(".env")
 	if err != nil {

@@ -8,6 +8,8 @@ import (
 	"os"
 
 	moduls "final-project/internal/moduls"
+	"final-project/internal/nextdate"
+	"final-project/internal/utils"
 
 	_ "github.com/mattn/go-sqlite3" // Импорт драйвера SQLite
 )
@@ -68,11 +70,14 @@ func Searchtitl(db *sql.DB, search string) ([]moduls.Scheduler, error) {
 		FROM scheduler 
 		WHERE title LIKE :search OR comment LIKE :search 
 		ORDER BY date 
-		LIMIT 50
+		LIMIT :limit
 	`
+	rows, err := db.Query(query,
+		sql.Named("search", fmt.Sprintf("%%%s%%", search)),
+		sql.Named("limit", utils.DefaultTaskLimit))
 	// подставляем поисковый запрос
-	search = fmt.Sprintf("%%%s%%", search)
-	rows, err := db.Query(query, sql.Named("search", search))
+	// search = fmt.Sprintf("%%%s%%", search)
+	// rows, err := db.Query(query, sql.Named("search", search))
 	// проверка на ошибки
 	if err != nil {
 		return []moduls.Scheduler{}, err
@@ -106,8 +111,9 @@ func SearchDate(db *sql.DB, date string) ([]moduls.Scheduler, error) {
 	var tasks []moduls.Scheduler
 
 	// считываем задачи по дате
-	rows, err := db.Query("SELECT id, date, title, comment, repeat FROM scheduler WHERE date = :date LIMIT 50",
-		sql.Named("date", date))
+	rows, err := db.Query("SELECT id, date, title, comment, repeat FROM scheduler WHERE date = :date LIMIT :limit",
+		sql.Named("date", date),
+		sql.Named("limit", utils.DefaultTaskLimit))
 	if err != nil {
 		return []moduls.Scheduler{}, err
 	}
@@ -137,9 +143,15 @@ func SearchDate(db *sql.DB, date string) ([]moduls.Scheduler, error) {
 // Функция для получения задачи по ID
 func GetpoID(db *sql.DB, id string) (moduls.Scheduler, error) {
 	var task moduls.Scheduler
+<<<<<<< HEAD
 	//db := InitDatabase()
 	//defer db.Close()
 	log.Printf("Получение задачи с ID: %s", id)
+=======
+	// db := InitDatabase()
+	// defer db.Close()
+
+>>>>>>> 49cbd60aebcbc098619db0606202eea4fda9a289
 	row := db.QueryRow("SELECT id, date, title, comment, repeat FROM scheduler WHERE id = ?", id)
 	err := row.Scan(&task.ID, &task.Date, &task.Title, &task.Comment, &task.Repeat)
 	if err != nil {
@@ -268,6 +280,7 @@ func ReadTask(db *sql.DB, date string) ([]moduls.Scheduler, error) {
 }
 
 // insertTask добавляет задачу в базу данных.
+<<<<<<< HEAD
 /*func InsertTask(db *sql.DB, task moduls.Scheduler) (int64, error) {
 	if db == nil {
 		return 0, fmt.Errorf("база данных не инициализирована")
@@ -282,6 +295,14 @@ func ReadTask(db *sql.DB, date string) ([]moduls.Scheduler, error) {
 		return 0, fmt.Errorf("слишком длинный заголовок задачи")
 	}
 
+=======
+func InsertTask(db *sql.DB, task moduls.Scheduler) (int64, error) {
+	if task.Repeat != "" {
+		if err := nextdate.ValidateRepeatFormat(task.Repeat); err != nil {
+			return 0, fmt.Errorf("неверный формат повтора: %v", err)
+		}
+	}
+>>>>>>> 49cbd60aebcbc098619db0606202eea4fda9a289
 	result, err := db.Exec(`
         INSERT INTO scheduler (date, title, comment, repeat)
         VALUES (?, ?, ?, ?)
