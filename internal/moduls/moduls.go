@@ -21,9 +21,9 @@ type Errors struct {
 type Config struct {
 	Port   string `json:"port"`
 	DBFile string `json:"db_file"`
-	//JWTSecret string `json:"jwt_secret"`
-	Password string `json:"password"`
-	//TestEnv  string `json:"test_env"`
+	// JWTSecret string `json:"jwt_secret"`
+	// Password string `json:"password"`
+	// TestEnv  string `json:"test_env"`
 }
 
 type SchedulerList struct {

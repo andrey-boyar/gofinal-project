@@ -1,7 +1,7 @@
 package tasks
 
 import (
-	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
@@ -27,8 +27,10 @@ func NextDateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Возвращаем результат в ответе
-	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"next_date": nextDate})
-	// utils.SendError(w, http.StatusOK, map[string]string{"next_date": nextDate})
+	_, err = w.Write([]byte(nextDate))
+
+	if err != nil {
+		log.Printf("writing tasks data error: %v", err)
+	}
 }

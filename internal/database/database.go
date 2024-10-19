@@ -9,7 +9,6 @@ import (
 
 	moduls "final-project/internal/moduls"
 
-	"github.com/go-sql-driver/mysql"
 	_ "github.com/mattn/go-sqlite3" // Импорт драйвера SQLite
 )
 
@@ -42,7 +41,16 @@ func InitDatabase() *sql.DB {
 // Функция для проверки соединения с базой данных
 func TestDatabaseConnection(db *sql.DB) error {
 	// Выполняем простой запрос
-	_, err := db.Exec("SELECT 1")
+	_, err := db.Exec(`
+        CREATE TABLE IF NOT EXISTS scheduler (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            title TEXT NOT NULL,
+            comment TEXT,
+            repeat TEXT(128)
+        );
+        CREATE INDEX IF NOT EXISTS idx_date ON scheduler(date);
+        `)
 	if err != nil {
 		log.Printf("Ошибка выполнения тестового запроса: %v", err)
 		return fmt.Errorf("ошибка выполнения тестового запроса: %w", err)
@@ -127,29 +135,32 @@ func SearchDate(db *sql.DB, date string) ([]moduls.Scheduler, error) {
 }
 
 // Функция для получения задачи по ID
-func GetpoID(id string) (moduls.Scheduler, error) {
+func GetpoID(db *sql.DB, id string) (moduls.Scheduler, error) {
 	var task moduls.Scheduler
-	db := InitDatabase()
-	defer db.Close()
-
+	//db := InitDatabase()
+	//defer db.Close()
+	log.Printf("Получение задачи с ID: %s", id)
 	row := db.QueryRow("SELECT id, date, title, comment, repeat FROM scheduler WHERE id = ?", id)
 	err := row.Scan(&task.ID, &task.Date, &task.Title, &task.Comment, &task.Repeat)
 	if err != nil {
 		if err == sql.ErrNoRows {
+			log.Printf("Задача с ID %s не найдена", id)
 			return moduls.Scheduler{}, fmt.Errorf("задача с ID %s не найдена", id)
 		}
+		log.Printf("Ошибка при получении задачи: %v", err)
 		return moduls.Scheduler{}, fmt.Errorf("ошибка при получении задачи: %v", err)
 	}
+	log.Printf("Задача найдена: %+v", task)
 	return task, nil
 }
 
-// Функция для создания задачи
-func Create(task *moduls.Scheduler) (int, error) {
-	db := InitDatabase()
+// Функция добавляет новую задачу в базу данных
+func Create(db *sql.DB, task *moduls.Scheduler) (int, error) {
+	//db := InitDatabase()
 	if db == nil {
 		return 0, errors.New("database not initialized")
 	}
-	defer db.Close()
+	//defer db.Close()
 
 	// Вставляем задачу в таблицу
 	result, err := db.Exec("INSERT INTO scheduler (date, title, comment, repeat) VALUES (:date, :title, :comment, :repeat)",
@@ -226,7 +237,7 @@ func Delete(id string) error {
 }
 
 // ReadTask читает все задачи из базы данных
-func ReadTask(db *sql.DB) ([]moduls.Scheduler, error) {
+func ReadTask(db *sql.DB, date string) ([]moduls.Scheduler, error) {
 	var tasks []moduls.Scheduler
 	// считываем все задачи
 	rows, err := db.Query("SELECT id, date, title, comment, repeat FROM scheduler ORDER BY date")
@@ -257,12 +268,20 @@ func ReadTask(db *sql.DB) ([]moduls.Scheduler, error) {
 }
 
 // insertTask добавляет задачу в базу данных.
-func InsertTask(db *sql.DB, task moduls.Scheduler) (int64, error) {
-	//if task.Repeat != "" {
-	//if err := nextdate.ValidateRepeatFormat(task.Repeat); err != nil {
-	//return 0, fmt.Errorf("неверный формат повтора: %v", err)
-	//}
-	//}
+/*func InsertTask(db *sql.DB, task moduls.Scheduler) (int64, error) {
+	if db == nil {
+		return 0, fmt.Errorf("база данных не инициализирована")
+	}
+	if task.Repeat != "" {
+		_, err := nextdate.NextDate(time.Now(), task.Date, task.Repeat)
+		if err != nil {
+			return 0, fmt.Errorf("неверный формат повтора: %v", err)
+		}
+	}
+	if len(task.Title) > 255 {
+		return 0, fmt.Errorf("слишком длинный заголовок задачи")
+	}
+
 	result, err := db.Exec(`
         INSERT INTO scheduler (date, title, comment, repeat)
         VALUES (?, ?, ?, ?)
@@ -289,4 +308,4 @@ func InsertTask(db *sql.DB, task moduls.Scheduler) (int64, error) {
 	}
 	log.Printf("Задача успешно вставлена с ID: %d", id)
 	return id, nil
-}
+}*/

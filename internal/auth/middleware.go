@@ -27,5 +27,7 @@ func LoggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		log.Printf("Запрос: %s", r.URL.Path)
 		next.ServeHTTP(lrw, r)
 		log.Printf("Ответ: %s", lrw.body.String())
+		// Записываем оригинальный ответ
+		//w.Write(lrw.body.Bytes())
 	}
 }
