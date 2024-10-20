@@ -19,6 +19,11 @@ func NextDate(now time.Time, date string, repeat string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("неверный формат даты")
 	}
+	// Если дата задачи уже в будущем, возвращаем её без изменений
+	//if dateTime.After(now) {
+	//	return date, nil
+	//}
+
 	// Если правило повторения пустое, возвращаем ошибку
 	if repeat == "" {
 		return "", fmt.Errorf("правило повтора не указано")

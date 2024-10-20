@@ -7,7 +7,7 @@ import (
 const (
 	DateFormat       = "20060102"
 	DefaultTaskLimit = 50
-	//DateFormatDB     = "2006-01-02"
+	DateFormatDB     = "02.01.2006"
 )
 
 // ParseDate парсит строку с датой в объект времени
@@ -20,12 +20,12 @@ func FormatDate(date time.Time) string {
 	return date.Format(DateFormat)
 }
 
-// FormatDateDB форматирует дату в строку в формате "2006-01-02"
-//func FormatDateDB(date time.Time) string {
-//	return date.Format(DateFormatDB)
-//}
+// FormatDateDB форматирует дату в строку в формате ""02.01.2006""
+func FormatDateDB(date time.Time) string {
+	return date.Format(DateFormatDB)
+}
 
-// ParseDateDB парсит строку с датой в объект времени в формате "2006-01-02"
-//func ParseDateDB(dateStr string) (time.Time, error) {
-//return time.Parse(DateFormatDB, dateStr)
-//}
+// ParseDateDB парсит строку с датой в объект времени в формате ""02.01.2006""
+func ParseDateDB(dateStr string) (time.Time, error) {
+	return time.Parse(DateFormatDB, dateStr)
+}

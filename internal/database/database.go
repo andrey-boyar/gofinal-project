@@ -137,6 +137,8 @@ func SearchDate(db *sql.DB, date string) ([]moduls.Scheduler, error) {
 // Функция для получения задачи по ID
 func GetpoID(db *sql.DB, id string) (moduls.Scheduler, error) {
 	var task moduls.Scheduler
+	//db := InitDatabase()
+	//defer db.Close()
 	log.Printf("Получение задачи с ID: %s", id)
 	row := db.QueryRow("SELECT id, date, title, comment, repeat FROM scheduler WHERE id = ?", id)
 	err := row.Scan(&task.ID, &task.Date, &task.Title, &task.Comment, &task.Repeat)
@@ -154,9 +156,11 @@ func GetpoID(db *sql.DB, id string) (moduls.Scheduler, error) {
 
 // Функция добавляет новую задачу в базу данных
 func Create(db *sql.DB, task *moduls.Scheduler) (int, error) {
+	//db := InitDatabase()
 	if db == nil {
 		return 0, errors.New("database not initialized")
 	}
+	//defer db.Close()
 
 	// Вставляем задачу в таблицу
 	result, err := db.Exec("INSERT INTO scheduler (date, title, comment, repeat) VALUES (:date, :title, :comment, :repeat)",

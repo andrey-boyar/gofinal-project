@@ -129,12 +129,39 @@ func SearchTasks(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 
 // получение задач по дате или поиску
 func searchDate(db *sql.DB, search string) ([]moduls.Scheduler, error) {
+	log.Printf("Поиск задач для даты/поиска: %s", search)
 	if len(search) > 0 {
-		if date, err := time.Parse("02.01.2006", search); err == nil {
+
+		/*if date, err := time.Parse("02.01.2006", search); err == nil {
+			log.Printf("Поиск по дате: %s", date.Format(utils.DateFormat))
 			return database.ReadTask(db, date.Format(utils.DateFormat))
 		}
+		// Попробуйте распарсить дату в формате "20060102"
+		/*if date, err := time.Parse(utils.DateFormat, search); err == nil {
+			log.Printf("Поиск по дате (формат DateFormat): %s", date.Format(utils.DateFormat))
+			return database.ReadTask(db, search)
+		}
+		// Попробуйте распарсить дату в формате "02.01.2006"
+		if date, err := time.Parse(utils.DateFormatDB, search); err == nil {
+			formattedDate := date.Format(utils.DateFormat)
+			log.Printf("Поиск по дате (формат DateFormatDB): %s", formattedDate)
+			return database.ReadTask(db, formattedDate)
+		}*/
+
+		// Попробуем различные форматы даты
+		formats := []string{"02.01.2006", "20060102", utils.DateFormat, utils.DateFormatDB}
+		for _, format := range formats {
+			if date, err := time.Parse(format, search); err == nil {
+				formattedDate := date.Format(utils.DateFormat)
+				log.Printf("Поиск по дате: %s", formattedDate)
+				return database.ReadTask(db, formattedDate)
+			}
+		}
+
+		log.Printf("Поиск по заголовку: %s", search)
 		return database.Searchtitl(db, search)
 	}
+	log.Printf("Поиск всех задач")
 	return database.SearchDate(db, search)
 }
 
@@ -325,6 +352,17 @@ func handleTaskDelete(w http.ResponseWriter, r *http.Request) {
 func GetTasks(db *sql.DB, titleFilter string, dateFilter string) ([]moduls.Scheduler, error) {
 	log.Printf("Получение задач с фильтрами: title=%s, date=%s", titleFilter, dateFilter)
 
+	if titleFilter != "" {
+		return searchDate(db, titleFilter)
+	}
+
+	if dateFilter != "" {
+		return database.ReadTask(db, dateFilter)
+	}
+
+	return database.ReadTask(db, "")
+
+	// запрос к базе данных
 	query := "SELECT id, date, title, comment, repeat FROM scheduler WHERE 1=1"
 	var args []interface{}
 
@@ -339,6 +377,9 @@ func GetTasks(db *sql.DB, titleFilter string, dateFilter string) ([]moduls.Sched
 	}
 
 	query += " ORDER BY date"
+
+	log.Printf("SQL запрос: %s", query)
+	log.Printf("Аргументы запроса: %v", args)
 
 	rows, err := db.Query(query, args...) // выполнение запроса
 	if err != nil {
