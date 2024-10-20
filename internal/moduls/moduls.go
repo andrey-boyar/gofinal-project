@@ -8,6 +8,8 @@ type Scheduler struct {
 	Comment string `json:"comment"`
 	Repeat  string `json:"repeat"`
 }
+
+// структура для id задачи
 type TaskId struct {
 	Id int `json:"id"`
 }
@@ -26,6 +28,7 @@ type Config struct {
 	// TestEnv  string `json:"test_env"`
 }
 
+// структура для списка задач
 type SchedulerList struct {
 	Tasks []Scheduler `json:"tasks"`
 }

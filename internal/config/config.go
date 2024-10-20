@@ -4,10 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	//"encoding/json"
 	"final-project/internal/moduls"
-
-	//"log"
 
 	"github.com/joho/godotenv"
 )

@@ -33,6 +33,7 @@ func SendJSON(w http.ResponseWriter, status int, data interface{}) {
 	}
 }
 
+// SendError отправляет ошибку клиенту.
 func SendError(w http.ResponseWriter, message string, statusCode int) {
 	log.Printf("Отправка ошибки: %s (код: %d)", message, statusCode)
 	w.Header().Set("Content-Type", "application/json")

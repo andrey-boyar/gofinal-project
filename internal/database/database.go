@@ -137,8 +137,6 @@ func SearchDate(db *sql.DB, date string) ([]moduls.Scheduler, error) {
 // Функция для получения задачи по ID
 func GetpoID(db *sql.DB, id string) (moduls.Scheduler, error) {
 	var task moduls.Scheduler
-	//db := InitDatabase()
-	//defer db.Close()
 	log.Printf("Получение задачи с ID: %s", id)
 	row := db.QueryRow("SELECT id, date, title, comment, repeat FROM scheduler WHERE id = ?", id)
 	err := row.Scan(&task.ID, &task.Date, &task.Title, &task.Comment, &task.Repeat)
@@ -156,11 +154,9 @@ func GetpoID(db *sql.DB, id string) (moduls.Scheduler, error) {
 
 // Функция добавляет новую задачу в базу данных
 func Create(db *sql.DB, task *moduls.Scheduler) (int, error) {
-	//db := InitDatabase()
 	if db == nil {
 		return 0, errors.New("database not initialized")
 	}
-	//defer db.Close()
 
 	// Вставляем задачу в таблицу
 	result, err := db.Exec("INSERT INTO scheduler (date, title, comment, repeat) VALUES (:date, :title, :comment, :repeat)",
@@ -266,46 +262,3 @@ func ReadTask(db *sql.DB, date string) ([]moduls.Scheduler, error) {
 	}
 	return tasks, nil
 }
-
-// insertTask добавляет задачу в базу данных.
-/*func InsertTask(db *sql.DB, task moduls.Scheduler) (int64, error) {
-	if db == nil {
-		return 0, fmt.Errorf("база данных не инициализирована")
-	}
-	if task.Repeat != "" {
-		_, err := nextdate.NextDate(time.Now(), task.Date, task.Repeat)
-		if err != nil {
-			return 0, fmt.Errorf("неверный формат повтора: %v", err)
-		}
-	}
-	if len(task.Title) > 255 {
-		return 0, fmt.Errorf("слишком длинный заголовок задачи")
-	}
-
-	result, err := db.Exec(`
-        INSERT INTO scheduler (date, title, comment, repeat)
-        VALUES (?, ?, ?, ?)
-    `, task.Date, task.Title, task.Comment, task.Repeat)
-	if err != nil {
-		log.Printf("Ошибка добавления задачи: %v", err)
-		if mysqlErr, ok := err.(*mysql.MySQLError); ok {
-			log.Printf("MySQL error number: %d", mysqlErr.Number)
-			switch mysqlErr.Number {
-			case 1062:
-				return 0, fmt.Errorf("задача с таким заголовком уже существует")
-			case 1406:
-				return 0, fmt.Errorf("слишком длинное значение для одного из полей")
-			}
-		}
-		return 0, fmt.Errorf("ошибка при добавлении задачи в базу данных")
-		// return 0, err
-	}
-	id, err := result.LastInsertId()
-	// log.Printf("ID вставленной задачи: %d", id)
-	if err != nil {
-		log.Printf("Ошибка при получении ID вставленной задачи: %v", err)
-		return 0, err
-	}
-	log.Printf("Задача успешно вставлена с ID: %d", id)
-	return id, nil
-}*/

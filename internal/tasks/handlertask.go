@@ -4,8 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-
-	//"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -50,6 +48,7 @@ func GetTasksHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	// titleFilter := r.URL.Query().Get("title")
 	dateFilter := r.URL.Query().Get("date")
 
+	// получение задач
 	tasks, err := GetTasks(db, search, dateFilter)
 	if err != nil {
 		log.Printf("Ошибка при получении задач: %v", err)
@@ -103,10 +102,8 @@ func handleTaskPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	}
 	// Возвращение ID созданной задачи
 	utils.SendJSON(w, http.StatusCreated, map[string]interface{}{"id": taskId})
-	//if err := json.NewEncoder(w).Encode(moduls.TaskId{Id: taskId}); err != nil {
-	//utils.SendError(w, "failed to encode response", http.StatusInternalServerError)
-	//return
-	//}
+	// Преобразуем taskId в строку и возвращаем её напрямую
+	//utils.SendJSON(w, http.StatusCreated, strconv.Itoa(taskId))
 	log.Println("Added task with id=%d", taskId)
 }
 
@@ -115,12 +112,13 @@ func SearchTasks(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	search := r.URL.Query().Get("search")
 	//date := r.URL.Query().Get("date")
 
+	// поиск задач
 	tasks, err := searchDate(db, search)
 	if err != nil {
 		utils.SendError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
+	// если задач нет, то возвращаем пустой слайс
 	if tasks == nil {
 		tasks = []moduls.Scheduler{}
 	}
@@ -148,14 +146,17 @@ func handleTaskPut(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		utils.SendError(w, "JSON deserialization error", http.StatusBadRequest)
 		return
 	}
+	// проверка id
 	if len(task.ID) == 0 {
 		utils.SendError(w, "invalid id", http.StatusBadRequest)
 		return
 	}
+	// проверка id на число
 	if _, err := strconv.Atoi(task.ID); err != nil {
 		utils.SendError(w, "invalid id", http.StatusBadRequest)
 		return
 	}
+	// проверка даты
 	parseDate, err := time.Parse(utils.DateFormat, task.Date)
 	if err != nil {
 		utils.SendError(w, "invalid date format", http.StatusBadRequest)
@@ -165,10 +166,12 @@ func handleTaskPut(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		// как в создании задачи
 		task.Date = time.Now().Format(utils.DateFormat)
 	}
+	// проверка заголовка
 	if len(task.Title) == 0 {
 		utils.SendError(w, "invalid title", http.StatusBadRequest)
 		return
 	}
+	// проверка формата повтора
 	if len(task.Repeat) > 0 {
 		if _, err := nextdate.NextDate(time.Now(), task.Date, task.Repeat); err != nil {
 			utils.SendError(w, "invalid repeat format", http.StatusBadRequest)
@@ -176,7 +179,7 @@ func handleTaskPut(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		}
 	}
 
-	_, err = database.Update(db, &task)
+	_, err = database.Update(db, &task) // обновление задачи
 	if err != nil {
 		utils.SendError(w, "failed to update task", http.StatusInternalServerError)
 		return
@@ -236,7 +239,7 @@ func UpdateTask(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		utils.SendError(w, "invalid title", http.StatusBadRequest)
 		return
 	}
-	if task.Repeat != "" {
+	if task.Repeat != "" { // если повтор есть, то получаем следующую дату
 		nextDate, err := nextdate.NextDate(time.Now(), task.Date, task.Repeat)
 		if err != nil {
 			utils.SendError(w, fmt.Sprintf("Неверный формат повтора: %v", err), http.StatusBadRequest)
@@ -293,8 +296,6 @@ func HandleTaskDone(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		}
 	}
 
-	//utils.SendJSON(w, http.StatusOK, task)
-	//utils.SendJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	if err := json.NewEncoder(w).Encode(struct{}{}); err != nil {
 		utils.SendError(w, "failed to encode response", http.StatusInternalServerError)
 		return
@@ -315,56 +316,31 @@ func handleTaskDelete(w http.ResponseWriter, r *http.Request) {
 		utils.SendError(w, "failed to delete task", http.StatusInternalServerError)
 		return
 	}
-	//w.Header().Set("Content-Type", "application/json")
-	//w.WriteHeader(http.StatusOK)
-	//json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-	//utils.SendJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	// отправка ответа
 	w.WriteHeader(http.StatusNoContent)
 	log.Printf("Deleted task with id=%s", id)
 }
 
-// функция для валидации задачи
-/*func validateTaskInput(task *moduls.Scheduler) error {
-	if task.ID == "" {
-		return fmt.Errorf("ID задачи не может быть пустым")
-	}
-	if task.Title == "" {
-		return fmt.Errorf("заголовок задачи не может быть пустым")
-	}
-	taskDate, err := time.Parse(utils.DateFormat, task.Date)
-	if err != nil {
-		return fmt.Errorf("неверный формат даты")
-	}
-	if taskDate.Before(time.Now().Truncate(24 * time.Hour)) {
-		return fmt.Errorf("дата не может быть меньше сегодняшней")
-	}
-	if task.Repeat != "" {
-		if err := nextdate.ValidateRepeatFormat(task.Repeat); err != nil {
-			return err
-		}
-	}
-	return nil
-}*/
-
+// GetTasks получает задачи с фильтрами
 func GetTasks(db *sql.DB, titleFilter string, dateFilter string) ([]moduls.Scheduler, error) {
 	log.Printf("Получение задач с фильтрами: title=%s, date=%s", titleFilter, dateFilter)
 
 	query := "SELECT id, date, title, comment, repeat FROM scheduler WHERE 1=1"
 	var args []interface{}
 
-	if titleFilter != "" {
+	if titleFilter != "" { // если titleFilter не пустой, то добавляем в запрос
 		query += " AND (title LIKE ? OR comment LIKE ?)"
 		args = append(args, "%"+titleFilter+"%", "%"+titleFilter+"%")
 	}
 
-	if dateFilter != "" {
+	if dateFilter != "" { // если dateFilter не пустой, то добавляем в запрос
 		query += " AND date = ?"
 		args = append(args, dateFilter)
 	}
 
 	query += " ORDER BY date"
 
-	rows, err := db.Query(query, args...)
+	rows, err := db.Query(query, args...) // выполнение запроса
 	if err != nil {
 		return nil, fmt.Errorf("ошибка выполнения запроса: %w", err)
 	}

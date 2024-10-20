@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi"
 )
 
+// SetupRouter настраивает маршруты для API
 func SetupRouter(r *chi.Mux, db *sql.DB) {
 	//r := chi.NewRouter()
 	// Добавляем глобальные middleware
@@ -19,6 +20,7 @@ func SetupRouter(r *chi.Mux, db *sql.DB) {
 		})
 	})
 
+	// Маршруты для API
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/nextdate", tasks.NextDateHandler)
 
@@ -29,13 +31,10 @@ func SetupRouter(r *chi.Mux, db *sql.DB) {
 			r.Delete("/", func(w http.ResponseWriter, r *http.Request) { tasks.TaskHandler(w, r, db) })
 			r.Post("/done", func(w http.ResponseWriter, r *http.Request) { tasks.HandleTaskDone(w, r, db) })
 		})
-
 		r.Get("/tasks", func(w http.ResponseWriter, r *http.Request) { tasks.GetTasksHandler(w, r, db) })
 	})
 	// Добавляем HealthCheckHandler
 	r.Get("/api/health", HealthCheckHandler(db))
-
-	//return r, db
 }
 
 // HealthCheckHandler возвращает функцию-обработчик для проверки работоспособности

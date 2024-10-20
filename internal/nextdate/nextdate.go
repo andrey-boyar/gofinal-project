@@ -47,26 +47,22 @@ func NextDate(now time.Time, date string, repeat string) (string, error) {
 		}
 	case strings.HasPrefix(repeat, "w "):
 		// Если повторение через определенные дни недели
-		nowWeekDay := int(now.Weekday())
-		if nowWeekDay == 0 {
-			nowWeekDay = 7
-		}
 		repeatDaysStr := strings.Split(strings.TrimPrefix(repeat, "w "), ",")
 		repeatDays := make([]int, 0, len(repeatDaysStr))
 		for _, day := range repeatDaysStr {
-			if dayNumber, parseErr := strconv.ParseInt(day, 10, 64); parseErr == nil {
-				if dayNumber < 1 || dayNumber > 7 {
-					return "", fmt.Errorf("неверный день недели: %d", dayNumber)
-				}
-				if int(dayNumber) <= nowWeekDay {
-					dayNumber += 7
-				}
-				repeatDays = append(repeatDays, int(dayNumber))
+			dayNumber, err := strconv.Atoi(day)
+			if err != nil || dayNumber < 1 || dayNumber > 7 {
+				return "", fmt.Errorf("неверный день недели: %s", day)
 			}
+			repeatDays = append(repeatDays, dayNumber)
 		}
-		sort.Ints(repeatDays)
-		shift := repeatDays[0] - nowWeekDay
-		date = now.AddDate(0, 0, shift).Format(utils.DateFormat)
+
+		// Вычисляем следующую дату
+		nextDate, err := calculateNextDateWeekly(now, dateTime, repeatDays)
+		if err != nil {
+			return "", err
+		}
+		return nextDate, nil
 
 	case strings.HasPrefix(repeat, "m "):
 		// Если повторение через определенные дни и месяцы
@@ -111,34 +107,31 @@ func NextDate(now time.Time, date string, repeat string) (string, error) {
 }
 
 // calculateNextDateWeekly вычисляет следующую дату для еженедельного повтора.
-func calculateNextDateWeekly(now, start time.Time, days []string) (string, error) {
+func calculateNextDateWeekly(now, start time.Time, days []int) (string, error) {
 	if len(days) == 0 {
 		return "", fmt.Errorf("не указаны дни недели для повтора")
 	}
-	sort.Strings(days)
-	weekdays := make([]time.Weekday, 0, len(days))
-	for _, day := range days {
-		d, err := strconv.Atoi(day)
-		if err != nil || d < 1 || d > 7 {
-			return "", fmt.Errorf("некорректный день недели: %s", day)
-		}
-		weekdays = append(weekdays, time.Weekday((d-1)%7))
-	}
+	sort.Ints(days)
 
 	next := start
 	if next.Before(now) {
 		next = now
 	}
+
 	for {
-		for _, wd := range weekdays {
-			candidateDate := next
-			daysUntilWeekday := (int(wd) - int(candidateDate.Weekday()) + 7) % 7
-			candidateDate = candidateDate.AddDate(0, 0, daysUntilWeekday)
+		nowWeekday := int(next.Weekday())
+		if nowWeekday == 0 {
+			nowWeekday = 7
+		}
+
+		for _, day := range days {
+			daysUntil := (day - nowWeekday + 7) % 7
+			candidateDate := next.AddDate(0, 0, daysUntil)
 			if candidateDate.After(now) {
 				return candidateDate.Format(utils.DateFormat), nil
 			}
 		}
-		next = next.AddDate(0, 0, 7)
+		next = next.AddDate(0, 0, 1)
 	}
 }
 

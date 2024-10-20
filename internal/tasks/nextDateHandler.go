@@ -9,6 +9,7 @@ import (
 	"final-project/internal/utils"
 )
 
+// NextDateHandler обрабатывает запросы к /api/nextdate.
 func NextDateHandler(w http.ResponseWriter, r *http.Request) {
 	// Получаем параметр "now" из запроса и парсим его
 	now, err := time.Parse(utils.DateFormat, r.FormValue("now"))
