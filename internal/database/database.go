@@ -141,6 +141,7 @@ func GetpoID(db *sql.DB, id string) (moduls.Scheduler, error) {
 	}
 	var task moduls.Scheduler
 	log.Printf("Получение задачи с ID: %s", id)
+
 	row := db.QueryRow("SELECT id, date, title, comment, repeat FROM scheduler WHERE id = ?", id)
 	err := row.Scan(&task.ID, &task.Date, &task.Title, &task.Comment, &task.Repeat)
 	if err != nil {
@@ -228,7 +229,7 @@ func Delete(id string) error {
 
 	// Проверка на успешное удаление
 	if rowsAffected == 0 {
-		return nil // errors.New("failed to delete")
+		return errors.New("failed to delete")
 	}
 
 	// возвращаем удаленную задачу

@@ -55,6 +55,10 @@ func GetTasksHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		utils.SendError(w, "Ошибка при получении задач", http.StatusInternalServerError)
 		return
 	}
+	// Если задач нет, возвращаем пустой массив
+	if tasks == nil {
+		tasks = []moduls.Scheduler{}
+	}
 
 	utils.SendJSON(w, http.StatusOK, map[string]interface{}{"tasks": tasks})
 }
@@ -102,9 +106,7 @@ func handleTaskPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	}
 	// Возвращение ID созданной задачи
 	utils.SendJSON(w, http.StatusCreated, map[string]interface{}{"id": taskId})
-	// Преобразуем taskId в строку и возвращаем её напрямую
-	//utils.SendJSON(w, http.StatusCreated, strconv.Itoa(taskId))
-	//log.Println("Added task with id=%d", taskId)
+
 }
 
 // функция для поиска задач
@@ -153,7 +155,8 @@ func searchDate(db *sql.DB, search string) ([]moduls.Scheduler, error) {
 		return tasks, nil
 	}
 	log.Printf("Поиск всех задач")
-	return database.SearchDate(db, search)
+	//return database.SearchDate(db, search)
+	return database.ReadTask(db, "") // Изменено на ReadTask с пустой датой
 }
 
 // handleTaskPut обновляет задачу
@@ -204,10 +207,7 @@ func handleTaskPut(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	}
 
 	utils.SendJSON(w, http.StatusOK, task)
-	//if err := json.NewEncoder(w).Encode(task); err != nil {
-	//utils.SendError(w, "failed to encode response", http.StatusInternalServerError)
-	//	return
-	//}
+
 }
 
 // GetTaskByID получает задачу по ID
@@ -267,28 +267,17 @@ func UpdateTask(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		}
 		task.Date = nextDate // Обновляем дату только если это необходимо
 	}
-	/*if task.Repeat != "" { // если повтор есть, то получаем следующую дату
-		nextDate, err := nextdate.NextDate(time.Now(), task.Date, task.Repeat)
-		if err != nil {
-			utils.SendError(w, fmt.Sprintf("Неверный формат повтора: %v", err), http.StatusBadRequest)
-			return
-		}
-		task.Date = nextDate
-	}
-	// проверка формата повтора
-	if len(task.Repeat) > 0 {
-		if _, err := nextdate.NextDate(time.Now(), task.Date, task.Repeat); err != nil {
-			utils.SendError(w, "invalid repeat format", http.StatusBadRequest)
-			return
-		}
-	}*/
-	// обновление задачи
-	_, err = database.Update(db, &task)
+	updatedTask, err := database.Update(db, &task)
 	if err != nil {
+		if err.Error() == "failed to update" {
+			utils.SendError(w, fmt.Sprintf("Задача с ID %s не найдена", task.ID), http.StatusNotFound)
+			return
+		}
 		utils.SendError(w, "failed to update task", http.StatusInternalServerError)
 		return
 	}
-	utils.SendJSON(w, http.StatusOK, task)
+
+	utils.SendJSON(w, http.StatusOK, updatedTask)
 }
 
 // HandleTaskDone обрабатывает запрос на выполнение задачи
@@ -323,7 +312,8 @@ func HandleTaskDone(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 			return
 		}
 	}
-
+	// Возвращаем пустой ответ
+	//w.WriteHeader(http.StatusNoContent)
 	if err := json.NewEncoder(w).Encode(struct{}{}); err != nil {
 		utils.SendError(w, "failed to encode response", http.StatusInternalServerError)
 		return
