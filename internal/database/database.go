@@ -136,9 +136,10 @@ func SearchDate(db *sql.DB, date string) ([]moduls.Scheduler, error) {
 
 // Функция для получения задачи по ID
 func GetpoID(db *sql.DB, id string) (moduls.Scheduler, error) {
+	if db == nil {
+		return moduls.Scheduler{}, errors.New("database not initialized")
+	}
 	var task moduls.Scheduler
-	//db := InitDatabase()
-	//defer db.Close()
 	log.Printf("Получение задачи с ID: %s", id)
 	row := db.QueryRow("SELECT id, date, title, comment, repeat FROM scheduler WHERE id = ?", id)
 	err := row.Scan(&task.ID, &task.Date, &task.Title, &task.Comment, &task.Repeat)
@@ -156,11 +157,9 @@ func GetpoID(db *sql.DB, id string) (moduls.Scheduler, error) {
 
 // Функция добавляет новую задачу в базу данных
 func Create(db *sql.DB, task *moduls.Scheduler) (int, error) {
-	//db := InitDatabase()
 	if db == nil {
 		return 0, errors.New("database not initialized")
 	}
-	//defer db.Close()
 
 	// Вставляем задачу в таблицу
 	result, err := db.Exec("INSERT INTO scheduler (date, title, comment, repeat) VALUES (:date, :title, :comment, :repeat)",
@@ -238,9 +237,19 @@ func Delete(id string) error {
 
 // ReadTask читает все задачи из базы данных
 func ReadTask(db *sql.DB, date string) ([]moduls.Scheduler, error) {
+	log.Printf("ReadTask вызван с датой: %s", date)
 	var tasks []moduls.Scheduler
 	// считываем все задачи
-	rows, err := db.Query("SELECT id, date, title, comment, repeat FROM scheduler ORDER BY date")
+	//rows, err := db.Query("SELECT id, date, title, comment, repeat FROM scheduler ORDER BY date")
+	var rows *sql.Rows
+	var err error
+
+	if date != "" {
+		rows, err = db.Query("SELECT id, date, title, comment, repeat FROM scheduler WHERE date = ? ORDER BY date", date)
+	} else {
+		rows, err = db.Query("SELECT id, date, title, comment, repeat FROM scheduler ORDER BY date")
+	}
+
 	if err != nil {
 		// return []moduls.Scheduler{}, err
 		return nil, fmt.Errorf("ошибка запроса к базе данных: %w", err)
@@ -251,6 +260,7 @@ func ReadTask(db *sql.DB, date string) ([]moduls.Scheduler, error) {
 		var task moduls.Scheduler
 		if err := rows.Scan(&task.ID, &task.Date, &task.Title, &task.Comment, &task.Repeat); err != nil {
 			return nil, fmt.Errorf("ошибка сканирования строки: %w", err)
+
 			// return []moduls.Scheduler{}, err
 		}
 		tasks = append(tasks, task)
@@ -261,8 +271,14 @@ func ReadTask(db *sql.DB, date string) ([]moduls.Scheduler, error) {
 		// return []moduls.Scheduler{}, err
 	}
 	// проверка на пустой массив
-	if tasks == nil {
-		tasks = []moduls.Scheduler{}
+	//if tasks == nil {
+	//tasks = []moduls.Scheduler{}
+	//}
+	if len(tasks) == 0 {
+		log.Printf("Задачи не найдены для даты: %s", date)
+		return []moduls.Scheduler{}, nil // Возвращаем пустой слайс вместо nil
 	}
+
+	log.Printf("Найдено задач: %d для даты %s", len(tasks), date)
 	return tasks, nil
 }

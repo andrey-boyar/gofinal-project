@@ -104,7 +104,7 @@ func handleTaskPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	utils.SendJSON(w, http.StatusCreated, map[string]interface{}{"id": taskId})
 	// Преобразуем taskId в строку и возвращаем её напрямую
 	//utils.SendJSON(w, http.StatusCreated, strconv.Itoa(taskId))
-	log.Println("Added task with id=%d", taskId)
+	//log.Println("Added task with id=%d", taskId)
 }
 
 // функция для поиска задач
@@ -124,42 +124,33 @@ func SearchTasks(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	}
 	// Отправка ответа
 	utils.SendJSON(w, http.StatusOK, map[string]interface{}{"tasks": tasks})
-	log.Printf("Read %d tasks", len(tasks))
+	//log.Printf("Read %d tasks", len(tasks))
 }
 
 // получение задач по дате или поиску
 func searchDate(db *sql.DB, search string) ([]moduls.Scheduler, error) {
 	log.Printf("Поиск задач для даты/поиска: %s", search)
 	if len(search) > 0 {
-
-		/*if date, err := time.Parse("02.01.2006", search); err == nil {
-			log.Printf("Поиск по дате: %s", date.Format(utils.DateFormat))
-			return database.ReadTask(db, date.Format(utils.DateFormat))
-		}
-		// Попробуйте распарсить дату в формате "20060102"
-		/*if date, err := time.Parse(utils.DateFormat, search); err == nil {
-			log.Printf("Поиск по дате (формат DateFormat): %s", date.Format(utils.DateFormat))
-			return database.ReadTask(db, search)
-		}
-		// Попробуйте распарсить дату в формате "02.01.2006"
-		if date, err := time.Parse(utils.DateFormatDB, search); err == nil {
-			formattedDate := date.Format(utils.DateFormat)
-			log.Printf("Поиск по дате (формат DateFormatDB): %s", formattedDate)
-			return database.ReadTask(db, formattedDate)
-		}*/
-
 		// Попробуем различные форматы даты
 		formats := []string{"02.01.2006", "20060102", utils.DateFormat, utils.DateFormatDB}
 		for _, format := range formats {
 			if date, err := time.Parse(format, search); err == nil {
 				formattedDate := date.Format(utils.DateFormat)
 				log.Printf("Поиск по дате: %s", formattedDate)
-				return database.ReadTask(db, formattedDate)
+				tasks, err := database.ReadTask(db, formattedDate)
+				if err != nil {
+					return nil, err
+				}
+				return tasks, nil
 			}
 		}
 
 		log.Printf("Поиск по заголовку: %s", search)
-		return database.Searchtitl(db, search)
+		tasks, err := database.Searchtitl(db, search)
+		if err != nil {
+			return nil, err
+		}
+		return tasks, nil
 	}
 	log.Printf("Поиск всех задач")
 	return database.SearchDate(db, search)
@@ -228,8 +219,10 @@ func GetTaskByID(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 	// Отправка ответа
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("{}"))
 	utils.SendJSON(w, http.StatusOK, task)
-	log.Printf("Read task with id=%s", id)
+	//log.Printf("Read task with id=%s", id)
 }
 
 // UpdateTask обновляет задачу в базе данных
@@ -259,14 +252,22 @@ func UpdateTask(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	// если дата в прошлом, то ставим текущую дату
 	if parseDate.Before(time.Now()) {
 		// как в создании задачи
-		task.Date = time.Now().Format(utils.DateFormat)
+		//task.Date = time.Now().Format(utils.DateFormat)
 	}
 	// проверка заголовка
 	if len(task.Title) == 0 {
 		utils.SendError(w, "invalid title", http.StatusBadRequest)
 		return
 	}
-	if task.Repeat != "" { // если повтор есть, то получаем следующую дату
+	if len(task.Repeat) > 0 {
+		nextDate, err := nextdate.NextDate(time.Now(), task.Date, task.Repeat)
+		if err != nil {
+			utils.SendError(w, "invalid repeat format", http.StatusBadRequest)
+			return
+		}
+		task.Date = nextDate // Обновляем дату только если это необходимо
+	}
+	/*if task.Repeat != "" { // если повтор есть, то получаем следующую дату
 		nextDate, err := nextdate.NextDate(time.Now(), task.Date, task.Repeat)
 		if err != nil {
 			utils.SendError(w, fmt.Sprintf("Неверный формат повтора: %v", err), http.StatusBadRequest)
@@ -280,7 +281,7 @@ func UpdateTask(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 			utils.SendError(w, "invalid repeat format", http.StatusBadRequest)
 			return
 		}
-	}
+	}*/
 	// обновление задачи
 	_, err = database.Update(db, &task)
 	if err != nil {
@@ -344,8 +345,10 @@ func handleTaskDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// отправка ответа
-	w.WriteHeader(http.StatusNoContent)
-	log.Printf("Deleted task with id=%s", id)
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("{}"))
+	//w.WriteHeader(http.StatusNoContent)
+	//log.Printf("Deleted task with id=%s", id)
 }
 
 // GetTasks получает задачи с фильтрами
@@ -353,14 +356,20 @@ func GetTasks(db *sql.DB, titleFilter string, dateFilter string) ([]moduls.Sched
 	log.Printf("Получение задач с фильтрами: title=%s, date=%s", titleFilter, dateFilter)
 
 	if titleFilter != "" {
-		return searchDate(db, titleFilter)
+		tasks, err := searchDate(db, titleFilter)
+		if err != nil {
+			return nil, err
+		}
+		return tasks, nil
 	}
 
 	if dateFilter != "" {
-		return database.ReadTask(db, dateFilter)
+		tasks, err := database.ReadTask(db, dateFilter)
+		if err != nil {
+			return nil, err
+		}
+		return tasks, nil
 	}
-
-	return database.ReadTask(db, "")
 
 	// запрос к базе данных
 	query := "SELECT id, date, title, comment, repeat FROM scheduler WHERE 1=1"
@@ -407,4 +416,7 @@ func GetTasks(db *sql.DB, titleFilter string, dateFilter string) ([]moduls.Sched
 
 	log.Printf("Получено задач: %d", len(tasks))
 	return tasks, nil
+
+	// Возвращаем пустой слайс, если нет фильтров
+	//return []moduls.Scheduler{}, nil
 }
