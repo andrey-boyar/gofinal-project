@@ -31,7 +31,9 @@ func SetupRouter(r *chi.Mux, db *sql.DB) {
 			r.Delete("/", func(w http.ResponseWriter, r *http.Request) { tasks.TaskHandler(w, r, db) })
 			r.Post("/done", func(w http.ResponseWriter, r *http.Request) { tasks.HandleTaskDone(w, r, db) })
 		})
-		r.Get("/tasks", func(w http.ResponseWriter, r *http.Request) { tasks.GetTasksHandler(w, r, db) })
+		//r.Get("/tasks", func(w http.ResponseWriter, r *http.Request) { tasks.GetTasksHandler(w, r, db) })
+		//})
+		r.Get("/tasks", func(w http.ResponseWriter, r *http.Request) { tasks.GetTasksHandler(w, r, db) }) // Новый обработчик для получения всех задач
 	})
 	// Добавляем HealthCheckHandler
 	r.Get("/api/health", HealthCheckHandler(db))
