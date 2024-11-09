@@ -21,9 +21,6 @@ const (
 )
 
 func main() {
-	//currentDir, _ := os.Getwd()
-	//log.Printf("Текущая рабочая директория: %s", currentDir)
-
 	// Загрузка конфигурации
 	_, err := config.LoadConfig(".env")
 	if err != nil {
@@ -35,14 +32,6 @@ func main() {
 	if port == "" {
 		port = defaultPort
 	}
-	// Проверяем, установлен ли пароль в переменной окружения TODO_PASSWORD
-	//cfg := moduls.Config{
-	//	Password: os.Getenv("TODO_PASSWORD"),
-	//		Port:     defaultPort,
-	//}
-	//if cfg.Password == "" {
-	//	log.Fatal("TODO_PASSWORD environment variable is required")
-	//}
 
 	// Инициализация базы данных
 	db := database.InitDatabase()
@@ -65,7 +54,6 @@ func main() {
 
 	// Обслуживаем статические файлы // Путь к директории с веб-файлами
 	webServer := http.FileServer(http.Dir(webDir))
-	// r.Handle("/*", http.StripPrefix("/", webServer))
 	r.Mount("/", webServer)
 
 	// Запуск сервера на указанном порту

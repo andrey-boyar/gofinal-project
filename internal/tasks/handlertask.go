@@ -34,7 +34,6 @@ func TaskHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 			utils.SendJSON(w, http.StatusOK, task)
 		} else {
 			utils.SendError(w, "Invalid request", http.StatusBadRequest) // Возвращаем ошибку, если id не указан
-			//GetTasksHandler(w, r, db) // Вызов GetTasksHandler для обработки запросов с фильтрами
 			return
 		}
 	default:
@@ -76,9 +75,6 @@ func GetTasksHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 	// 3. Если это не дата - значит это текстовый поиск
-	// Всегда возвращаем пустой массив для текстового поиска
-	//utils.SendJSON(w, http.StatusOK, map[string]interface{}{
-	//	"tasks": []moduls.Scheduler{},*
 	tasks, err := database.Searchtitl(db, search)
 	if err != nil {
 		log.Printf("Ошибка при поиске по названию: %v", err)
@@ -163,56 +159,6 @@ func handleTaskPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	// Возвращение ID созданной задачи
 	utils.SendJSON(w, http.StatusCreated, map[string]interface{}{"id": taskId})
 }
-
-// функция для поиска задач
-/*func SearchTasks(w http.ResponseWriter, r *http.Request, db *sql.DB) {
-	search := r.URL.Query().Get("search")
-	date := r.URL.Query().Get("date")
-
-	// поиск задач
-	tasks, err := GetTasks(db, search, date)
-	if err != nil {
-		utils.SendError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// если задач нет, то возвращаем пустой слайс
-	if tasks == nil {
-		tasks = []moduls.Scheduler{}
-	}
-
-	// Устанавливаем заголовок и отправляем ответ
-	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-	w.WriteHeader(http.StatusOK)
-	utils.SendJSON(w, http.StatusOK, map[string]interface{}{"tasks": tasks})
-}*/
-
-// получение задач по дате или поиску
-/*func searchDate(db *sql.DB, search string, dateFilter string) ([]moduls.Scheduler, error) {
-	if search == "" && dateFilter == "" {
-		return database.ReadTask(db, "")
-	}
-
-	if dateFilter != "" {
-		return database.SearchDate(db, dateFilter)
-	}
-
-	return []moduls.Scheduler{}, nil
-}
-
-// Функция для удаления дубликатов из среза задач
-func removeDuplicates(tasks []moduls.Scheduler) []moduls.Scheduler {
-	seen := make(map[string]struct{}) // Изменяем тип ключа на string
-	result := []moduls.Scheduler{}
-
-	for _, task := range tasks {
-		if _, ok := seen[task.ID]; !ok {
-			seen[task.ID] = struct{}{}
-			result = append(result, task)
-		}
-	}
-	return result
-}*/
 
 // handleTaskPut обновляет задачу
 func handleTaskPut(w http.ResponseWriter, r *http.Request, db *sql.DB) {
@@ -325,21 +271,3 @@ func handleTaskDelete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("{}"))
 }
-
-// GetTasks получает задачи с фильтрами
-/*func GetTasks(db *sql.DB, titleFilter string, dateFilter string) ([]moduls.Scheduler, error) {
-	log.Printf("Получение задач с фильтрами: title=%s, date=%s", titleFilter, dateFilter)
-
-	// Если фильтры пустые, возвращаем все задачи
-	if titleFilter == "" && dateFilter == "" {
-		return database.ReadTask(db, "")
-	}
-
-	// Если есть дата, ищем по дате
-	if dateFilter != "" {
-		return database.SearchDate(db, dateFilter)
-	}
-
-	// Если есть только текстовый фильтр, возвращаем пустой массив
-	return []moduls.Scheduler{}, nil
-}*/
