@@ -3,7 +3,6 @@ package tasks
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -35,7 +34,7 @@ func TaskHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 			utils.SendJSON(w, http.StatusOK, task)
 		} else {
 			utils.SendError(w, "Invalid request", http.StatusBadRequest) // Возвращаем ошибку, если id не указан
-			//GetTasksHandler(w, r, db)                                    // Вызов GetTasksHandler для обработки запросов с фильтрами
+			//GetTasksHandler(w, r, db) // Вызов GetTasksHandler для обработки запросов с фильтрами
 			return
 		}
 	default:
@@ -46,34 +45,74 @@ func TaskHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 // GetTasksHandler получает задачи или все задачи, если фильтры не указаны
 func GetTasksHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	search := r.URL.Query().Get("search")
-	dateFilter := r.URL.Query().Get("date")
+	log.Printf("GetTasksHandler вызван с параметром search: %s", search)
 
-	var tasks []moduls.Scheduler
-	var err error
-
-	// Если фильтры пустые, получаем все задачи
-	if search == "" && dateFilter == "" {
-		tasks, err = database.ReadTask(db, "") // Получаем все задачи
-	} else {
-		// Получаем задачи с фильтрами
-		tasks, err = GetTasks(db, search, dateFilter)
-	}
-
-	if err != nil {
-		log.Printf("Ошибка при получении задач: %v", err)
-		utils.SendError(w, "Ошибка при получении задач", http.StatusInternalServerError)
+	// 1. Сначала проверяем пустой поиск
+	if search == "" {
+		tasks, err := database.ReadTask(db, "")
+		if err != nil {
+			log.Printf("Ошибка при получении всех задач: %v", err)
+			utils.SendError(w, "Ошибка при получении задач", http.StatusInternalServerError)
+			return
+		}
+		utils.SendJSON(w, http.StatusOK, map[string]interface{}{
+			"tasks": tasks,
+		})
 		return
 	}
 
-	// Если задач нет, возвращаем пустой массив
-	if tasks == nil {
-		tasks = []moduls.Scheduler{}
+	// 2. Затем проверяем, является ли поиск датой
+	if isDateFormat(search) {
+		formattedDate := convertDateFormat(search)
+		tasks, err := database.SearchDate(db, formattedDate)
+		if err != nil {
+			log.Printf("Ошибка при поиске по дате: %v", err)
+			utils.SendError(w, "Ошибка при поиске по дате", http.StatusInternalServerError)
+			return
+		}
+		utils.SendJSON(w, http.StatusOK, map[string]interface{}{
+			"tasks": tasks,
+		})
+		return
 	}
+	// 3. Если это не дата - значит это текстовый поиск
+	// Всегда возвращаем пустой массив для текстового поиска
+	//utils.SendJSON(w, http.StatusOK, map[string]interface{}{
+	//	"tasks": []moduls.Scheduler{},*
+	tasks, err := database.Searchtitl(db, search)
+	if err != nil {
+		log.Printf("Ошибка при поиске по названию: %v", err)
+		utils.SendError(w, "Ошибка при поиске по названию", http.StatusInternalServerError)
+		return
+	}
+	utils.SendJSON(w, http.StatusOK, map[string]interface{}{
+		"tasks": tasks,
+	})
+}
 
-	// Устанавливаем заголовок и отправляем ответ
-	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-	w.WriteHeader(http.StatusOK)
-	utils.SendJSON(w, http.StatusOK, map[string]interface{}{"tasks": tasks})
+// Проверка формата даты
+func isDateFormat(s string) bool {
+	_, err := time.Parse("02.01.2006", s)
+	//return err == nil
+	if err != nil {
+		log.Printf("Строка '%s' не является датой: %v", s, err)
+		return false
+	}
+	log.Printf("Строка '%s' является корректной датой", s)
+	return true
+}
+
+// Конвертация формата даты
+func convertDateFormat(date string) string {
+	t, err := time.Parse("02.01.2006", date)
+	//return t.Format("20060102")
+	if err != nil {
+		log.Printf("Ошибка конвертации даты '%s': %v", date, err)
+		return ""
+	}
+	formatted := t.Format("20060102")
+	log.Printf("Дата '%s' преобразована в '%s'", date, formatted)
+	return formatted
 }
 
 // Функция для добавления задачи
@@ -126,12 +165,12 @@ func handleTaskPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 }
 
 // функция для поиска задач
-func SearchTasks(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+/*func SearchTasks(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	search := r.URL.Query().Get("search")
 	date := r.URL.Query().Get("date")
 
 	// поиск задач
-	tasks, err := searchDate(db, search, date)
+	tasks, err := GetTasks(db, search, date)
 	if err != nil {
 		utils.SendError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -146,59 +185,19 @@ func SearchTasks(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	w.WriteHeader(http.StatusOK)
 	utils.SendJSON(w, http.StatusOK, map[string]interface{}{"tasks": tasks})
-}
+}*/
 
 // получение задач по дате или поиску
-func searchDate(db *sql.DB, search string, dateFilter string) ([]moduls.Scheduler, error) {
-	var tasks []moduls.Scheduler
-	// Проверка на пустые фильтры
+/*func searchDate(db *sql.DB, search string, dateFilter string) ([]moduls.Scheduler, error) {
 	if search == "" && dateFilter == "" {
-		//return tasks, nil // Возвращаем пустой срез, если оба фильтра пустые
-		return database.ReadTask(db, "") // Получаем все задачи
-		//return []moduls.Scheduler{}, nil
-	}
-	if len(search) > 0 {
-		log.Printf("Поиск задач для даты/поиска: %s", search)
-		// Проверка формата даты
-		if dateFilter != "" {
-			formats := []string{"02.01.2006", "20060102", utils.DateFormat, utils.DateFormatDB}
-			var validDate bool
-			for _, format := range formats {
-				if _, err := time.Parse(format, dateFilter); err == nil {
-					validDate = true
-					break
-				}
-			}
-			if !validDate {
-				return nil, fmt.Errorf("неверный формат даты: %s", dateFilter)
-			}
-		}
-	}
-	var err error
-	//var tasks []moduls.Scheduler
-
-	if search != "" {
-		tasks, err = database.Searchtitl(db, search) // Поиск задач по заголовку
-		if err != nil {
-			return nil, err
-		}
+		return database.ReadTask(db, "")
 	}
 
 	if dateFilter != "" {
-		dateTasks, err := database.SearchDate(db, dateFilter) // Поиск задач по дате
-		if err != nil {
-			return nil, err
-		}
-		tasks = append(tasks, dateTasks...)
+		return database.SearchDate(db, dateFilter)
 	}
-	// Удаление дубликатов, если необходимо
-	tasks = removeDuplicates(tasks)
 
-	// Проверка на наличие задач
-	//if len(tasks) == 0 {
-	//return nil, fmt.Errorf("задачи не найдены для заданных фильтров")
-	//}
-	return tasks, nil
+	return []moduls.Scheduler{}, nil
 }
 
 // Функция для удаления дубликатов из среза задач
@@ -213,7 +212,7 @@ func removeDuplicates(tasks []moduls.Scheduler) []moduls.Scheduler {
 		}
 	}
 	return result
-}
+}*/
 
 // handleTaskPut обновляет задачу
 func handleTaskPut(w http.ResponseWriter, r *http.Request, db *sql.DB) {
@@ -328,21 +327,19 @@ func handleTaskDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetTasks получает задачи с фильтрами
-func GetTasks(db *sql.DB, titleFilter string, dateFilter string) ([]moduls.Scheduler, error) {
+/*func GetTasks(db *sql.DB, titleFilter string, dateFilter string) ([]moduls.Scheduler, error) {
 	log.Printf("Получение задач с фильтрами: title=%s, date=%s", titleFilter, dateFilter)
 
 	// Если фильтры пустые, возвращаем все задачи
 	if titleFilter == "" && dateFilter == "" {
-		return database.ReadTask(db, "") // Получаем все задачи
+		return database.ReadTask(db, "")
 	}
 
-	// Если есть хотя бы один фильтр, вызываем searchDate
-	tasks, err := searchDate(db, titleFilter, dateFilter)
-	if err != nil {
-		return nil, err
+	// Если есть дата, ищем по дате
+	if dateFilter != "" {
+		return database.SearchDate(db, dateFilter)
 	}
 
-	return tasks, nil // Возвращаем результат searchDate
-	// Если есть хотя бы один фильтр, вызываем searchDate
-	//return searchDate(db, titleFilter, dateFilter)
-}
+	// Если есть только текстовый фильтр, возвращаем пустой массив
+	return []moduls.Scheduler{}, nil
+}*/

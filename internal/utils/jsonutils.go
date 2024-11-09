@@ -2,6 +2,7 @@ package utils
 
 import (
 	"encoding/json"
+	moduls "final-project/internal/moduls"
 	"fmt"
 	"log"
 	"net/http"
@@ -25,11 +26,26 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, v interface{}) error {
 
 // SendJSON отправляет JSON-ответ клиенту.
 func SendJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
+	//w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	//	w.WriteHeader(status)
+	//	if err := json.NewEncoder(w).Encode(data); err != nil {
+	//	log.Printf("Ошибка при сериализации JSON: %v", err)
+	//	http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	//}
+	//}
+	w.Header().Set("Content-Type", "application/json")
+
+	// Если data это слайс Scheduler, оборачиваем его в TaskResponse
+	if tasks, ok := data.([]moduls.Scheduler); ok {
+		response := moduls.SchedulerList{
+			Tasks: tasks,
+		}
+		data = response
+	}
+
 	if err := json.NewEncoder(w).Encode(data); err != nil {
-		log.Printf("Ошибка при сериализации JSON: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		SendError(w, "Ошибка кодирования JSON", http.StatusInternalServerError)
+		return
 	}
 }
 
