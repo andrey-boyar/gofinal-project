@@ -1,7 +1,6 @@
 package tasks
 
 import (
-	"database/sql"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -15,25 +14,25 @@ import (
 )
 
 // TaskHandler обрабатывает запросы к /api/task.
-func TaskHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+func TaskHandler(w http.ResponseWriter, r *http.Request, db *database.DB) {
 	switch r.Method {
 	case http.MethodPost:
 		handleTaskPost(w, r, db)
 	case http.MethodPut:
 		handleTaskPut(w, r, db)
 	case http.MethodDelete:
-		handleTaskDelete(w, r)
+		handleTaskDelete(w, r, db)
 	case http.MethodGet:
 		id := r.URL.Query().Get("id")
 		if id != "" {
-			task, err := database.GetpoID(db, id)
+			task, err := db.GetpoID(id)
 			if err != nil {
 				utils.SendError(w, err.Error(), http.StatusNotFound)
 				return
 			}
 			utils.SendJSON(w, http.StatusOK, task)
 		} else {
-			utils.SendError(w, "Invalid request", http.StatusBadRequest) // Возвращаем ошибку, если id не указан
+			utils.SendError(w, "Invalid request", http.StatusBadRequest)
 			return
 		}
 	default:
@@ -42,13 +41,13 @@ func TaskHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 }
 
 // GetTasksHandler получает задачи или все задачи, если фильтры не указаны
-func GetTasksHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+func GetTasksHandler(w http.ResponseWriter, r *http.Request, db *database.DB) {
 	search := r.URL.Query().Get("search")
 	log.Printf("GetTasksHandler вызван с параметром search: %s", search)
 
 	// 1. Сначала проверяем пустой поиск
 	if search == "" {
-		tasks, err := database.ReadTask(db, "")
+		tasks, err := db.ReadTask("")
 		if err != nil {
 			log.Printf("Ошибка при получении всех задач: %v", err)
 			utils.SendError(w, "Ошибка при получении задач", http.StatusInternalServerError)
@@ -63,7 +62,7 @@ func GetTasksHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	// 2. Затем проверяем, является ли поиск датой
 	if isDateFormat(search) {
 		formattedDate := convertDateFormat(search)
-		tasks, err := database.SearchDate(db, formattedDate)
+		tasks, err := db.SearchDate(formattedDate)
 		if err != nil {
 			log.Printf("Ошибка при поиске по дате: %v", err)
 			utils.SendError(w, "Ошибка при поиске по дате", http.StatusInternalServerError)
@@ -75,7 +74,7 @@ func GetTasksHandler(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		return
 	}
 	// 3. Если это не дата - значит это текстовый поиск
-	tasks, err := database.Searchtitl(db, search)
+	tasks, err := db.Searchtitl(search)
 	if err != nil {
 		log.Printf("Ошибка при поиске по названию: %v", err)
 		utils.SendError(w, "Ошибка при поиске по названию", http.StatusInternalServerError)
@@ -112,7 +111,7 @@ func convertDateFormat(date string) string {
 }
 
 // Функция для добавления задачи
-func handleTaskPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+func handleTaskPost(w http.ResponseWriter, r *http.Request, db *database.DB) {
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	var taskData moduls.Scheduler
 	if err := json.NewDecoder(r.Body).Decode(&taskData); err != nil {
@@ -150,7 +149,7 @@ func handleTaskPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	}
 
 	// Добавление задачи в базу данных
-	taskId, err := database.Create(db, &taskData)
+	taskId, err := db.Create(&taskData)
 	if err != nil {
 		utils.SendError(w, "failed to create task", http.StatusInternalServerError)
 		return
@@ -161,7 +160,7 @@ func handleTaskPost(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 }
 
 // handleTaskPut обновляет задачу
-func handleTaskPut(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+func handleTaskPut(w http.ResponseWriter, r *http.Request, db *database.DB) {
 	var task moduls.Scheduler
 
 	if err := json.NewDecoder(r.Body).Decode(&task); err != nil {
@@ -206,7 +205,7 @@ func handleTaskPut(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	}
 
 	// обновление задачи
-	_, err = database.Update(db, &task)
+	err = db.Update(&task)
 	if err != nil {
 		utils.SendError(w, "failed to update task", http.StatusInternalServerError)
 		return
@@ -216,19 +215,19 @@ func handleTaskPut(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 }
 
 // HandleTaskDone обрабатывает запрос на выполнение задачи
-func HandleTaskDone(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+func HandleTaskDone(w http.ResponseWriter, r *http.Request, db *database.DB) {
 	log.Println("API: Завершение задачи")
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 
 	id := r.URL.Query().Get("id")
-	task, err := database.GetpoID(db, id)
+	task, err := db.GetpoID(id)
 	if err != nil {
 		utils.SendError(w, "failed to get task by id", http.StatusInternalServerError)
 		return
 	}
 
 	if task.Repeat == "" {
-		err = database.Delete(task.ID)
+		err = db.Delete(task.ID)
 		if err != nil {
 			utils.SendError(w, "failed to delete task", http.StatusInternalServerError)
 			return
@@ -240,7 +239,7 @@ func HandleTaskDone(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 			return
 		}
 		// Обновляем задачу с новой датой
-		_, err = database.Update(db, &task)
+		err = db.Update(&task)
 		if err != nil {
 			utils.SendError(w, "failed to update task", http.StatusInternalServerError)
 			return
@@ -248,26 +247,22 @@ func HandleTaskDone(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	}
 
 	// Возвращаем пустой ответ
-	if err := json.NewEncoder(w).Encode(struct{}{}); err != nil {
-		utils.SendError(w, "failed to encode response", http.StatusInternalServerError)
-		return
-	}
+	utils.SendJSON(w, http.StatusOK, map[string]interface{}{})
 }
 
 // handleTaskDelete удаляет задачу
-func handleTaskDelete(w http.ResponseWriter, r *http.Request) {
+func handleTaskDelete(w http.ResponseWriter, r *http.Request, db *database.DB) {
 	id := r.URL.Query().Get("id")
 	if id == "" {
-		utils.SendError(w, "ID задачи не указан", http.StatusBadRequest)
+		utils.SendError(w, "ID не указан", http.StatusBadRequest)
 		return
 	}
-	// удаление задачи
-	err := database.Delete(id)
+
+	err := db.Delete(id)
 	if err != nil {
-		utils.SendError(w, "failed to delete task", http.StatusInternalServerError)
+		utils.SendError(w, "Ошибка при удалении задачи", http.StatusInternalServerError)
 		return
 	}
-	// отправка ответа
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("{}"))
+
+	utils.SendJSON(w, http.StatusOK, map[string]interface{}{})
 }

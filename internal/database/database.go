@@ -6,36 +6,204 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
+	"time"
 
+	"final-project/internal/cache"
 	moduls "final-project/internal/moduls"
 
-	_ "github.com/mattn/go-sqlite3" // Импорт драйвера SQLite
+	_ "github.com/mattn/go-sqlite3"
 )
 
-// Функция для инициализации базы данных
-func InitDatabase() *sql.DB {
-	dbFile := os.Getenv("TODO_DBFILE")
-	if dbFile == "" {
-		log.Fatal("Не задан файл базы данных")
+// DB представляет структуру базы данных с кэшем
+type DB struct {
+	*sql.DB
+	cache *cache.Cache
+	mu    sync.RWMutex
+}
+
+var (
+	dbInstance *DB
+	once       sync.Once
+)
+
+// InitDatabase инициализирует подключение к базе данных
+func InitDatabase() *DB {
+	once.Do(func() {
+		dbFile := os.Getenv("TODO_DBFILE")
+		if dbFile == "" {
+			log.Fatal("Не задан файл базы данных")
+		}
+
+		db, err := sql.Open("sqlite3", dbFile)
+		if err != nil {
+			log.Fatalf("Ошибка открытия базы данных: %v", err)
+		}
+
+		// Настройка пула соединений
+		db.SetMaxOpenConns(25)
+		db.SetMaxIdleConns(5)
+		db.SetConnMaxLifetime(5 * time.Minute)
+
+		// Создание индексов
+		if err := createIndexes(db); err != nil {
+			log.Printf("Ошибка создания индексов: %v", err)
+		}
+
+		// Создание кэша
+		dbInstance = &DB{
+			DB:    db,
+			cache: cache.NewCache(),
+		}
+	})
+
+	return dbInstance
+}
+
+// createIndexes создает необходимые индексы
+func createIndexes(db *sql.DB) error {
+	indexes := []string{
+		`CREATE INDEX IF NOT EXISTS idx_date ON scheduler(date)`,
+		`CREATE INDEX IF NOT EXISTS idx_title ON scheduler(title)`,
+		`CREATE INDEX IF NOT EXISTS idx_repeat ON scheduler(repeat)`,
 	}
-	db, err := sql.Open("sqlite3", dbFile)
+
+	// Создание индексов
+	for _, index := range indexes {
+		if _, err := db.Exec(index); err != nil {
+			return fmt.Errorf("ошибка создания индекса: %v", err)
+		}
+	}
+	return nil
+}
+
+// ReadTask читает задачи с использованием кэша
+func (db *DB) ReadTask(date string) ([]moduls.Scheduler, error) {
+	cacheKey := fmt.Sprintf("tasks_%s", date)
+
+	// Проверяем кэш
+	if cached, ok := db.cache.Get(cacheKey); ok {
+		return cached.([]moduls.Scheduler), nil
+	}
+
+	// Если нет в кэше, читаем из БД
+	var tasks []moduls.Scheduler
+	var rows *sql.Rows
+	var err error
+
+	// Проверяем, есть ли дата в запросе
+	if date != "" {
+		rows, err = db.Query(`
+			SELECT id, date, title, comment, repeat 
+			FROM scheduler 
+			WHERE date = ? 
+			ORDER BY date
+		`, date)
+	} else {
+		rows, err = db.Query(`
+			SELECT id, date, title, comment, repeat 
+			FROM scheduler 
+			ORDER BY date
+		`)
+	}
+
+	// Если есть ошибка, возвращаем ее
 	if err != nil {
-		log.Fatalf("Ошибка открытия базы данных: %v", err)
+		return nil, fmt.Errorf("ошибка запроса к базе данных: %w", err)
 	}
-	if _, err := os.Stat(dbFile); os.IsNotExist(err) {
-		log.Fatalf("Файл базы данных не существует: %s", dbFile)
-	}
-	if db != nil {
-		return db
+	defer rows.Close()
+
+	// Сканируем строки
+	for rows.Next() {
+		var task moduls.Scheduler
+		// Сканируем строки
+		if err := rows.Scan(&task.ID, &task.Date, &task.Title, &task.Comment, &task.Repeat); err != nil {
+			return nil, fmt.Errorf("ошибка сканирования строки: %w", err)
+		}
+		tasks = append(tasks, task)
 	}
 
-	// Проверка соединения с базой данных
-	if err := db.Ping(); err != nil {
-		log.Fatalf("Ошибка подключения к базе данных: %v", err)
+	// Сохраняем в кэш на 5 минут
+	db.cache.Set(cacheKey, tasks, 5*time.Minute)
+
+	return tasks, nil
+}
+
+// Create добавляет новую задачу с инвалидацией кэша
+func (db *DB) Create(task *moduls.Scheduler) (int, error) {
+	result, err := db.Exec(`
+		INSERT INTO scheduler (date, title, comment, repeat) 
+		VALUES (?, ?, ?, ?)
+	`, task.Date, task.Title, task.Comment, task.Repeat)
+	if err != nil {
+		return 0, err
 	}
 
-	log.Printf("Успешное подключение к базе данных: %s", dbFile)
-	return db
+	// Получаем ID последней вставленной строки
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+
+	// Инвалидируем кэш
+	db.invalidateCache()
+	return int(id), nil
+}
+
+// Update обновляет задачу с инвалидацией кэша
+func (db *DB) Update(task *moduls.Scheduler) error {
+	result, err := db.Exec(`
+		UPDATE scheduler 
+		SET date = ?, title = ?, comment = ?, repeat = ? 
+		WHERE id = ?
+	`, task.Date, task.Title, task.Comment, task.Repeat, task.ID)
+	if err != nil {
+		return err
+	}
+
+	// Получаем количество затронутых строк
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	// Если строк нет, возвращаем ошибку
+	if rowsAffected == 0 {
+		return errors.New("задача не найдена")
+	}
+
+	// Инвалидируем кэш
+	db.invalidateCache()
+	return nil
+}
+
+// Delete удаляет задачу с инвалидацией кэша
+func (db *DB) Delete(id string) error {
+	result, err := db.Exec("DELETE FROM scheduler WHERE id = ?", id)
+	if err != nil {
+		return err
+	}
+
+	// Получаем количество затронутых строк
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return errors.New("задача не найдена")
+	}
+
+	// Инвалидируем кэш
+	db.invalidateCache()
+	return nil
+}
+
+// invalidateCache очищает кэш
+func (db *DB) invalidateCache() {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	db.cache = cache.NewCache()
 }
 
 // Функция для проверки соединения с базой данных
@@ -59,35 +227,31 @@ func TestDatabaseConnection(db *sql.DB) error {
 	return nil
 }
 
-// SearchTasksByTitle ищет задачи по названию
-func Searchtitl(db *sql.DB, search string) ([]moduls.Scheduler, error) {
-	log.Printf("Searchtitl вызван с параметром: %s", search)
+// GetpoID получает задачу по ID
+func (db *DB) GetpoID(id string) (moduls.Scheduler, error) {
+	if db == nil {
+		return moduls.Scheduler{}, errors.New("database not initialized")
+	}
+	var task moduls.Scheduler
+	log.Printf("Получение задачи с ID: %s", id)
 
-	query := `
-        SELECT id, date, title, comment, repeat 
-        FROM scheduler 
-        WHERE title LIKE ? 
-        ORDER BY date ASC
-    `
-	rows, err := db.Query(query, "%"+search+"%") // Используем LIKE для поиска по названию
+	// Используем ? placeholders для безопасного выполнения запроса
+	row := db.QueryRow("SELECT id, date, title, comment, repeat FROM scheduler WHERE id = ?", id)
+	err := row.Scan(&task.ID, &task.Date, &task.Title, &task.Comment, &task.Repeat)
 	if err != nil {
-		return nil, fmt.Errorf("ошибка запроса: %w", err)
-	}
-	defer rows.Close()
-
-	var tasks []moduls.Scheduler
-	for rows.Next() {
-		var task moduls.Scheduler
-		if err := rows.Scan(&task.ID, &task.Date, &task.Title, &task.Comment, &task.Repeat); err != nil {
-			return nil, fmt.Errorf("ошибка сканирования: %w", err)
+		if err == sql.ErrNoRows {
+			log.Printf("Задача с ID %s не найдена", id)
+			return moduls.Scheduler{}, fmt.Errorf("задача с ID %s не найдена", id)
 		}
-		tasks = append(tasks, task)
+		log.Printf("Ошибка при получении задачи: %v", err)
+		return moduls.Scheduler{}, fmt.Errorf("ошибка при получении задачи: %v", err)
 	}
-	return tasks, nil
+	log.Printf("Задача найдена: %+v", task)
+	return task, nil
 }
 
-// SearchTasksByDate ищет задачи по дате
-func SearchDate(db *sql.DB, date string) ([]moduls.Scheduler, error) {
+// SearchDate ищет задачи по дате
+func (db *DB) SearchDate(date string) ([]moduls.Scheduler, error) {
 	log.Printf("SearchDate вызван с параметром: %s", date)
 	query := `
         SELECT id, date, title, comment, repeat 
@@ -119,146 +283,29 @@ func SearchDate(db *sql.DB, date string) ([]moduls.Scheduler, error) {
 	return tasks, nil
 }
 
-// Функция для получения задачи по ID
-func GetpoID(db *sql.DB, id string) (moduls.Scheduler, error) {
-	if db == nil {
-		return moduls.Scheduler{}, errors.New("database not initialized")
-	}
-	var task moduls.Scheduler
-	log.Printf("Получение задачи с ID: %s", id)
+// Searchtitl ищет задачи по названию
+func (db *DB) Searchtitl(search string) ([]moduls.Scheduler, error) {
+	log.Printf("Searchtitl вызван с параметром: %s", search)
 
-	// Используем ? placeholders для безопасного выполнения запроса
-	row := db.QueryRow("SELECT id, date, title, comment, repeat FROM scheduler WHERE id = ?", id)
-	err := row.Scan(&task.ID, &task.Date, &task.Title, &task.Comment, &task.Repeat)
+	query := `
+        SELECT id, date, title, comment, repeat 
+        FROM scheduler 
+        WHERE title LIKE ? 
+        ORDER BY date ASC
+    `
+	rows, err := db.Query(query, "%"+search+"%") // Используем LIKE для поиска по названию
 	if err != nil {
-		if err == sql.ErrNoRows {
-			log.Printf("Задача с ID %s не найдена", id)
-			return moduls.Scheduler{}, fmt.Errorf("задача с ID %s не найдена", id)
-		}
-		log.Printf("Ошибка при получении задачи: %v", err)
-		return moduls.Scheduler{}, fmt.Errorf("ошибка при получении задачи: %v", err)
-	}
-	log.Printf("Задача найдена: %+v", task)
-	return task, nil
-}
-
-// Функция добавляет новую задачу в базу данных
-func Create(db *sql.DB, task *moduls.Scheduler) (int, error) {
-	if db == nil {
-		return 0, errors.New("database not initialized")
-	}
-
-	// Вставляем задачу в таблицу с использованием ? placeholders
-	result, err := db.Exec("INSERT INTO scheduler (date, title, comment, repeat) VALUES (?, ?, ?, ?)",
-		task.Date,
-		task.Title,
-		task.Comment,
-		task.Repeat)
-	if err != nil {
-		log.Printf("Ошибка при выполнении SQL-запроса: %v", err)
-		return 0, err
-	}
-
-	// Получаем ID последней вставленной записи
-	id, err := result.LastInsertId()
-	if err != nil {
-		log.Printf("Ошибка при получении ID новой задачи: %v", err)
-		return 0, err
-	}
-	return int(id), nil
-}
-
-// Функция для обновления задачи
-func Update(db *sql.DB, task *moduls.Scheduler) (moduls.Scheduler, error) {
-	// Обновляем задачу в таблице с использованием ? placeholders
-	result, err := db.Exec("UPDATE scheduler SET date = ?, title = ?, comment = ?, repeat = ? WHERE id = ?",
-		task.Date,
-		task.Title,
-		task.Comment,
-		task.Repeat,
-		task.ID)
-	if err != nil {
-		return moduls.Scheduler{}, err
-	}
-
-	// Получаем количество измененных строк
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return moduls.Scheduler{}, err
-	}
-
-	// Проверка на успешное обновление
-	if rowsAffected == 0 {
-		return moduls.Scheduler{}, errors.New("failed to update")
-	}
-
-	return *task, nil
-}
-
-// Функция для удаления задачи
-func Delete(id string) error {
-	db := InitDatabase()
-	defer db.Close()
-
-	// Удаляем задачу с использованием ? placeholders
-	result, err := db.Exec("DELETE FROM scheduler WHERE id = ?", id)
-	if err != nil {
-		return fmt.Errorf("ошибка при удалении задачи: %v", err)
-	}
-
-	// Получаем количество удаленных строк
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("ошибка при получении количества затронутых строк: %v", err)
-	}
-
-	// Проверка на успешное удаление
-	if rowsAffected == 0 {
-		return errors.New("failed to delete")
-	}
-
-	return nil
-}
-
-// ReadTask читает все задачи из базы данных
-func ReadTask(db *sql.DB, date string) ([]moduls.Scheduler, error) {
-	log.Printf("ReadTask вызван с датой: %s", date)
-	var tasks []moduls.Scheduler
-	var rows *sql.Rows
-	var err error
-
-	// Считываем задачи по дате с использованием ? placeholders
-	if date != "" {
-		rows, err = db.Query("SELECT id, date, title, comment, repeat FROM scheduler WHERE date = ? ORDER BY date", date)
-	} else {
-		rows, err = db.Query("SELECT id, date, title, comment, repeat FROM scheduler ORDER BY date")
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("ошибка запроса к базе данных: %w", err)
+		return nil, fmt.Errorf("ошибка запроса: %w", err)
 	}
 	defer rows.Close()
 
-	// Считываем задачи построчно
+	var tasks []moduls.Scheduler
 	for rows.Next() {
 		var task moduls.Scheduler
 		if err := rows.Scan(&task.ID, &task.Date, &task.Title, &task.Comment, &task.Repeat); err != nil {
-			return nil, fmt.Errorf("ошибка сканирования строки: %w", err)
+			return nil, fmt.Errorf("ошибка сканирования: %w", err)
 		}
 		tasks = append(tasks, task)
 	}
-
-	// Проверка на ошибки
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("ошибка сканирования строки: %w", err)
-	}
-
-	// Проверка на пустой массив
-	if len(tasks) == 0 {
-		log.Printf("Задачи не найдены для даты: %s", date)
-		return []moduls.Scheduler{}, nil // Возвращаем пустой слайс вместо nil
-	}
-
-	log.Printf("Найдено задач: %d для даты %s", len(tasks), date)
 	return tasks, nil
 }
