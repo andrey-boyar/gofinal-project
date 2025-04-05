@@ -1,0 +1,91 @@
+version: '3'
+
+vars:
+  BINARY_NAME: scheduler
+  GO_FILES: ./...
+  BUILD_DIR: ./build
+  MAIN_FILE: cmd/server/webserver.go
+
+tasks:
+  default:
+    desc: Запуск сервера в режиме разработки
+    cmds:
+      - go run {{.MAIN_FILE}}
+
+  build:
+    desc: Сборка проекта
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}
+      - go build -o {{.BUILD_DIR}}/{{.BINARY_NAME}} {{.MAIN_FILE}}
+    sources:
+      - "**/*.go"
+    generates:
+      - "{{.BUILD_DIR}}/{{.BINARY_NAME}}"
+
+  run:
+    desc: Запуск собранного приложения
+    deps: [build]
+    cmds:
+      - ./{{.BUILD_DIR}}/{{.BINARY_NAME}}
+
+  test:
+    desc: Запуск тестов
+    cmds:
+      - go test -v {{.GO_FILES}}
+
+  clean:
+    desc: Очистка сборки
+    cmds:
+      - rm -rf {{.BUILD_DIR}}
+      - go clean
+
+  lint:
+    desc: Проверка кода линтером
+    cmds:
+      - golangci-lint run {{.GO_FILES}}
+
+  deps:
+    desc: Установка зависимостей
+    cmds:
+      - go mod tidy
+      - go mod download
+
+  docker-build:
+    desc: Сборка Docker образа
+    cmds:
+      - docker build -t {{.BINARY_NAME}} .
+
+  docker-run:
+    desc: Запуск в Docker
+    cmds:
+      - docker run -p 7540:7540 {{.BINARY_NAME}}
+
+  migrate:
+    desc: Применение миграций базы данных
+    cmds:
+      - go run cmd/migrate/main.go
+
+  generate:
+    desc: Генерация кода
+    cmds:
+      - go generate {{.GO_FILES}}
+
+  check:
+    desc: Проверка кода
+    cmds:
+      - task: lint
+      - task: test
+      - go vet {{.GO_FILES}}
+
+  dev:
+    desc: Запуск в режиме разработки с автоперезагрузкой
+    cmds:
+      - air
+
+  setup:
+    desc: Настройка окружения разработки
+    cmds:
+      - task: deps
+      - cp .env.example .env
+      - go install github.com/cosmtrek/air@latest
+      - go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest 
